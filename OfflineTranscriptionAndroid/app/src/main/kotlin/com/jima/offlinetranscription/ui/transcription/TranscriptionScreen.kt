@@ -265,7 +265,7 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
-                    onClick = { viewModel.transcribeTestFile("/data/local/tmp/test_speech.wav") },
+                    onClick = { viewModel.transcribeTestAsset(context) },
                     enabled = !isRecording,
                     modifier = Modifier.semantics { contentDescription = "Test Audio File" }
                 ) {

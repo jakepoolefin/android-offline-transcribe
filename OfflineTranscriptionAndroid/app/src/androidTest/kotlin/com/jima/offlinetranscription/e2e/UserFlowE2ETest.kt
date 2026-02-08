@@ -17,7 +17,8 @@ import kotlin.test.assertTrue
 
 /**
  * User flow E2E tests covering complete UI interactions:
- * mic button, settings navigation, history, edge cases.
+ * mic button, settings navigation, transcription, edge cases.
+ * Note: This is a transcription-only app — no save/history features.
  *
  * Uses moonshine-tiny (fastest model, ~291ms inference) for all tests
  * that require a loaded model. Evidence screenshots are saved to
@@ -332,82 +333,49 @@ class UserFlowE2ETest {
         Log.i(TAG, "[$testName] Model reloaded, back on transcription screen — PASSED")
     }
 
-    // ---- Test 6: Save and View History ----
+    // ---- Test 6: Transcription Persists After Settings ----
 
     @Test
-    fun test_06_saveAndViewHistory() {
-        val testName = "06_saveAndViewHistory"
+    fun test_06_transcriptionPersistsAfterSettings() {
+        val testName = "06_transcriptionPersistsAfterSettings"
         val dir = evidenceDir(testName)
         launchWithModel(DEFAULT_MODEL)
-        // Wait for E2E auto-transcription (provides text to save — don't clear it)
-        device.wait(Until.hasObject(By.textContains("E2E EVIDENCE")), MODEL_LOAD_TIMEOUT)
-        Thread.sleep(SHORT_WAIT)
+        waitForModelAndClear()
         ensureTranscriptReady()
 
-        // Screenshot 01: transcript visible from E2E auto-transcription
+        // Screenshot 01: transcript visible
         takeScreenshot(dir, "01_transcript.png")
         Log.i(TAG, "[$testName] Transcript visible")
 
-        // Tap save button (wait for it to appear — needs fullText.isNotBlank())
-        val saveButton = device.wait(Until.findObject(By.desc("Save")), 10_000)
-        assertNotNull(saveButton, "Save button not found (may need transcript text to be visible)")
-        saveButton.click()
+        // Remember transcript text
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
+                as com.voiceping.offlinetranscription.OfflineTranscriptionApp
+        val textBefore = app.whisperEngine.confirmedText.value
+        assertTrue(textBefore.isNotBlank(), "Should have transcript text before settings round-trip")
+
+        // Open settings
+        val settingsButton = device.findObject(By.desc("Settings"))
+        assertNotNull(settingsButton, "Settings button not found")
+        settingsButton.click()
         Thread.sleep(2_000)
 
-        // Verify save dialog
-        val savedDialog = device.wait(Until.findObject(By.text("Saved")), 5_000)
-        assertNotNull(savedDialog, "Save confirmation dialog not found")
+        // Screenshot 02: settings open
+        takeScreenshot(dir, "02_settings_open.png")
 
-        // Screenshot 02: save confirmation
-        takeScreenshot(dir, "02_saved_dialog.png")
-
-        // Dismiss save dialog
-        val okButton = device.findObject(By.text("OK"))
-        assertNotNull(okButton, "OK button not found in save dialog")
-        okButton.click()
+        // Dismiss settings
+        device.pressBack()
         Thread.sleep(1_000)
 
-        // Navigate to History tab
-        val historyTab = device.findObject(By.text("History"))
-        assertNotNull(historyTab, "History tab not found")
-        historyTab.click()
-        Thread.sleep(2_000)
+        // Verify transcript text preserved
+        val textAfter = app.whisperEngine.confirmedText.value
+        assertTrue(
+            textAfter == textBefore,
+            "Transcript should be preserved after settings round-trip"
+        )
 
-        // Verify history list has items (should NOT show "No Transcriptions Yet")
-        val emptyState = device.findObject(By.text("No Transcriptions Yet"))
-        assertFalse(emptyState != null, "History should have items but shows empty state")
-
-        // Screenshot 03: history list
-        takeScreenshot(dir, "03_history_list.png")
-        Log.i(TAG, "[$testName] History list has items")
-
-        // Tap first history item to open detail
-        // History items show first 100 chars of text — just look for any clickable ListItem
-        val historyItem = device.findObject(By.textContains("ask not"))
-            ?: device.findObject(By.textContains("fellow"))
-            ?: device.findObject(By.textContains("country"))
-        if (historyItem != null) {
-            historyItem.click()
-            Thread.sleep(2_000)
-
-            // Verify detail screen — should show "Transcription" title
-            val detailTitle = device.wait(Until.findObject(By.text("Transcription")), 5_000)
-            assertNotNull(detailTitle, "History detail screen not found")
-
-            // Screenshot 04: history detail
-            takeScreenshot(dir, "04_history_detail.png")
-            Log.i(TAG, "[$testName] History detail screen visible")
-
-            // Go back
-            val backButton = device.findObject(By.desc("Back"))
-            backButton?.click()
-            Thread.sleep(1_000)
-        } else {
-            Log.w(TAG, "[$testName] Could not find history item to tap — taking fallback screenshot")
-            takeScreenshot(dir, "04_history_item_not_found.png")
-        }
-
-        Log.i(TAG, "[$testName] Save and view history — PASSED")
+        // Screenshot 03: text preserved
+        takeScreenshot(dir, "03_text_preserved.png")
+        Log.i(TAG, "[$testName] Transcription persists after settings — PASSED")
     }
 
     // ---- Test 7: Copy Transcript ----
@@ -525,60 +493,43 @@ class UserFlowE2ETest {
         Log.i(TAG, "[$testName] No mic button on setup screen — PASSED")
     }
 
-    // ---- Test 10: History Delete Item ----
+    // ---- Test 10: Copy Text via Overflow Menu ----
 
     @Test
-    fun test_10_historyDeleteItem() {
-        val testName = "10_historyDeleteItem"
+    fun test_10_copyTextViaOverflowMenu() {
+        val testName = "10_copyTextViaOverflowMenu"
         val dir = evidenceDir(testName)
         launchWithModel(DEFAULT_MODEL)
-        // Wait for E2E auto-transcription to provide text to save
-        device.wait(Until.hasObject(By.textContains("E2E EVIDENCE")), MODEL_LOAD_TIMEOUT)
-        Thread.sleep(SHORT_WAIT)
+        waitForModelAndClear()
         ensureTranscriptReady()
 
-        // Save the transcription
-        val saveButton = device.wait(Until.findObject(By.desc("Save")), 10_000)
-        assertNotNull(saveButton, "Save button not found")
-        saveButton.click()
-        Thread.sleep(2_000)
+        // Screenshot 01: transcript visible
+        takeScreenshot(dir, "01_transcript.png")
 
-        // Dismiss save dialog
-        val okButton = device.findObject(By.text("OK"))
-        okButton?.click()
+        // Open overflow menu
+        val moreButton = device.findObject(By.desc("More"))
+        assertNotNull(moreButton, "More menu button not found")
+        moreButton.click()
         Thread.sleep(1_000)
 
-        // Navigate to History tab
-        val historyTab = device.findObject(By.text("History"))
-        assertNotNull(historyTab, "History tab not found")
-        historyTab.click()
-        Thread.sleep(2_000)
+        // Screenshot 02: menu with Copy Text option
+        takeScreenshot(dir, "02_menu_open.png")
 
-        // Screenshot 01: history with item
-        takeScreenshot(dir, "01_history_with_item.png")
+        // Tap "Copy Text"
+        val copyText = device.wait(Until.findObject(By.desc("menu_copy")), 5_000)
+        assertNotNull(copyText, "Copy Text menu item not found")
+        copyText.click()
+        Thread.sleep(1_000)
 
-        // Find and tap delete button on first item
-        val deleteButton = device.findObject(By.desc("Delete"))
-        assertNotNull(deleteButton, "Delete button not found in history list")
+        // Verify transcript text still present after copy
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
+                as com.voiceping.offlinetranscription.OfflineTranscriptionApp
+        val text = app.whisperEngine.confirmedText.value
+        assertTrue(text.isNotBlank(), "Transcript text should remain after copying")
 
-        // Screenshot 02: about to delete
-        takeScreenshot(dir, "02_before_delete.png")
-
-        deleteButton.click()
-        Thread.sleep(2_000)
-
-        // Screenshot 03: after delete — may show empty state or remaining items
-        takeScreenshot(dir, "03_after_delete.png")
-
-        // Check if empty state appeared (meaning our item was the only one)
-        val emptyState = device.findObject(By.text("No Transcriptions Yet"))
-        if (emptyState != null) {
-            Log.i(TAG, "[$testName] History is now empty after delete")
-        } else {
-            Log.i(TAG, "[$testName] History still has items (other tests may have saved items)")
-        }
-
-        Log.i(TAG, "[$testName] History delete item — PASSED")
+        // Screenshot 03: text still visible
+        takeScreenshot(dir, "03_copied.png")
+        Log.i(TAG, "[$testName] Copy text via overflow menu — PASSED")
     }
 
     // ---- Helper Methods ----

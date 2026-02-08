@@ -21,11 +21,11 @@ ALL_TESTS=(
     "test_03_settingsBottomSheet"
     "test_04_settingsToggleVAD"
     "test_05_changeModelFlow"
-    "test_06_saveAndViewHistory"
+    "test_06_transcriptionPersistsAfterSettings"
     "test_07_copyTranscript"
     "test_08_clearTranscription"
     "test_09_recordWhileNoModel"
-    "test_10_historyDeleteItem"
+    "test_10_copyTextViaOverflowMenu"
 )
 
 if [ $# -gt 0 ]; then

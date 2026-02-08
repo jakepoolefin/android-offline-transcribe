@@ -1,10 +1,12 @@
 package com.voiceping.offlinetranscription.ui.transcription
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.voiceping.offlinetranscription.model.ModelInfo
 import com.voiceping.offlinetranscription.service.WhisperEngine
 import kotlinx.coroutines.launch
+import java.io.File
 
 class TranscriptionViewModel(
     val engine: WhisperEngine
@@ -54,6 +56,16 @@ class TranscriptionViewModel(
 
     fun transcribeTestFile(filePath: String) {
         engine.transcribeFile(filePath)
+    }
+
+    fun transcribeTestAsset(context: Context) {
+        val cached = File(context.cacheDir, "test_speech.wav")
+        if (!cached.exists()) {
+            context.assets.open("test_speech.wav").use { input ->
+                cached.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+        engine.transcribeFile(cached.absolutePath)
     }
 
     fun stopIfRecording() {
