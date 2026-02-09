@@ -37,8 +37,8 @@ class AllModelsE2ETest {
     private fun timeout(modelId: String): Long = when {
         modelId.contains("large") -> 1_800_000L
         modelId.contains("omnilingual") -> 600_000L
-        modelId.contains("small") -> 600_000L
-        modelId.contains("base") -> 300_000L
+        modelId.contains("small") -> 1_200_000L
+        modelId.contains("base") -> 600_000L
         else -> 120_000L
     }
 
@@ -66,14 +66,16 @@ class AllModelsE2ETest {
 
     private fun testModel(modelId: String) {
         val evidenceDir = "/sdcard/Documents/e2e/$modelId"
-        val resultSrc = "/sdcard/Android/data/$PACKAGE/files/e2e_result_$modelId.json"
+        val resultSrcPrivate = "/sdcard/Android/data/$PACKAGE/files/e2e_result_$modelId.json"
+        val resultSrcPublic = "$evidenceDir/result.json"
         val timeoutMs = timeout(modelId)
 
         Log.i(TAG, "=== E2E Testing $modelId (timeout: ${timeoutMs / 1000}s) ===")
 
         // 1. Create evidence directory and clean up previous result
         File(evidenceDir).mkdirs()
-        File(resultSrc).delete()
+        File(resultSrcPrivate).delete()
+        File(resultSrcPublic).delete()
 
         // 2. Launch app via Intent (avoids am force-stop which kills test process)
         val intent = context.packageManager.getLaunchIntentForPackage(PACKAGE)!!.apply {
@@ -119,7 +121,7 @@ class AllModelsE2ETest {
         while (System.currentTimeMillis() - startWait < evidenceTimeout) {
             dismissSystemUiDialogIfPresent(modelId)
             // Check if result.json was written (fast path)
-            if (File(resultSrc).exists()) {
+            if (File(resultSrcPublic).exists() || File(resultSrcPrivate).exists()) {
                 resultExists = true
                 Log.i(TAG, "[$modelId] result.json detected")
                 break
@@ -141,12 +143,25 @@ class AllModelsE2ETest {
 
         // 6. Copy result.json to evidence directory and validate
         if (!resultExists) {
-            resultExists = File(resultSrc).exists()
+            resultExists = File(resultSrcPublic).exists() || File(resultSrcPrivate).exists()
         }
         if (resultExists) {
-            val srcFile = File(resultSrc)
-            srcFile.copyTo(File(evidenceDir, "result.json"), overwrite = true)
-            val json = srcFile.readText().trim()
+            val publicFile = File(resultSrcPublic)
+            val privateFile = File(resultSrcPrivate)
+            val srcFile = when {
+                publicFile.exists() -> publicFile
+                privateFile.exists() -> privateFile
+                else -> null
+            }
+            val resolvedFile = srcFile ?: run {
+                val missingJson = """{"model_id":"$modelId","pass":false,"error":"result marker without result.json"}"""
+                publicFile.writeText(missingJson)
+                throw AssertionError("[$modelId] resultExists=true but result.json source file missing")
+            }
+            if (resolvedFile.absolutePath != publicFile.absolutePath) {
+                resolvedFile.copyTo(publicFile, overwrite = true)
+            }
+            val json = resolvedFile.readText().trim()
             Log.i(TAG, "[$modelId] result.json: $json")
             val payload = JSONObject(json)
 
@@ -178,7 +193,7 @@ class AllModelsE2ETest {
         } else {
             Log.e(TAG, "[$modelId] No result.json found after timeout")
             val timeoutJson = """{"model_id":"$modelId","pass":false,"error":"timeout"}"""
-            File(evidenceDir, "result.json").writeText(timeoutJson)
+            File(resultSrcPublic).writeText(timeoutJson)
             assertTrue(false, "[$modelId] Timed out waiting for transcription result")
         }
 
@@ -191,33 +206,46 @@ class AllModelsE2ETest {
      * Prefer "Wait" to keep the app process alive.
      */
     private fun dismissSystemUiDialogIfPresent(modelId: String): Boolean {
-        val anrTitle = device.findObject(By.textContains("isn't responding"))
-            ?: device.findObject(By.textContains("keeps stopping"))
-            ?: return false
+        return try {
+            val anrTitle = device.findObject(By.textContains("isn't responding"))
+                ?: device.findObject(By.textContains("keeps stopping"))
+                ?: return false
 
-        val waitButton = device.findObject(By.textContains("Wait"))
-            ?: device.findObject(By.textContains("wait"))
-        if (waitButton != null) {
-            waitButton.click()
-            Log.w(TAG, "[$modelId] Dismissed system dialog with 'Wait': ${anrTitle.text}")
-            Thread.sleep(500)
-            return true
+            val waitButton = device.findObject(By.textContains("Wait"))
+                ?: device.findObject(By.textContains("wait"))
+            if (waitButton != null) {
+                waitButton.click()
+                Log.w(TAG, "[$modelId] Dismissed system dialog with 'Wait': ${anrTitle.safeText()}")
+                Thread.sleep(500)
+                return true
+            }
+
+            val closeButton = device.findObject(By.textContains("Close app"))
+                ?: device.findObject(By.textContains("close app"))
+            if (closeButton != null) {
+                closeButton.click()
+                Log.w(TAG, "[$modelId] Dismissed system dialog with 'Close app': ${anrTitle.safeText()}")
+                Thread.sleep(500)
+                return true
+            }
+
+            // Last resort: back out of modal dialog
+            device.pressBack()
+            Thread.sleep(300)
+            Log.w(TAG, "[$modelId] Dismissed system dialog via back press")
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "[$modelId] Failed to inspect/dismiss system dialog", t)
+            false
         }
+    }
 
-        val closeButton = device.findObject(By.textContains("Close app"))
-            ?: device.findObject(By.textContains("close app"))
-        if (closeButton != null) {
-            closeButton.click()
-            Log.w(TAG, "[$modelId] Dismissed system dialog with 'Close app': ${anrTitle.text}")
-            Thread.sleep(500)
-            return true
+    private fun androidx.test.uiautomator.UiObject2.safeText(): String {
+        return try {
+            text ?: "<no-text>"
+        } catch (_: Throwable) {
+            "<stale-object>"
         }
-
-        // Last resort: back out of modal dialog
-        device.pressBack()
-        Thread.sleep(300)
-        Log.w(TAG, "[$modelId] Dismissed system dialog via back press")
-        return true
     }
 
     private fun takeScreenshot(dir: String, filename: String) {

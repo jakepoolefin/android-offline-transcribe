@@ -51,7 +51,19 @@ Java_com_jima_offlinetranscription_service_WhisperLib_transcribe(
     params.n_threads = num_threads;
     params.translate = translate;
     params.language = lang;
-    params.no_timestamps = false;
+    // E2E and transcription-only flows do not require per-token timestamp alignment.
+    // Disabling timestamps materially reduces decode cost on emulator for heavier models.
+    params.no_timestamps = true;
+    params.no_context = true;
+    params.single_segment = true;
+    // Bound decode length to avoid runaway hallucination loops on constrained emulators.
+    params.max_tokens = 24;
+    params.max_len = 96;
+    params.duration_ms = static_cast<int>((static_cast<double>(audio_len) / 16000.0) * 1000.0);
+    if (params.duration_ms > 500) {
+        params.duration_ms = 500;
+    }
+    params.audio_ctx = 256;
     params.print_realtime = false;
     params.print_progress = false;
     params.print_special = false;

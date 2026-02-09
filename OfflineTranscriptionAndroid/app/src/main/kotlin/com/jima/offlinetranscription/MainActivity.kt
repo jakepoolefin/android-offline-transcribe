@@ -21,10 +21,10 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 class MainActivity : ComponentActivity() {
     private fun e2eLoadTimeoutMs(modelId: String): Long = when {
-        modelId.contains("large") -> 1_800_000L
+        modelId.contains("large") -> 1_200_000L
         modelId.contains("omnilingual") -> 600_000L
-        modelId.contains("small") -> 600_000L
-        modelId.contains("base") -> 300_000L
+        modelId.contains("small") -> 1_200_000L
+        modelId.contains("base") -> 600_000L
         else -> 120_000L
     }
 
@@ -83,7 +83,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 cached.absolutePath
                             }
-                            app.whisperEngine.transcribeFile(wavPath)
+                            app.whisperEngine.transcribeFile(wavPath, languageHint = "en")
                         } else {
                             Log.e("E2E", "Model $e2eModelId not found")
                             app.whisperEngine.writeE2EFailure(

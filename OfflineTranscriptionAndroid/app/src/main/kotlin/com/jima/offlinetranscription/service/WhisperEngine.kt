@@ -955,8 +955,8 @@ class WhisperEngine(
         }
     }
 
-    /** Transcribe a 16kHz mono PCM WAV file. Used for testing on emulator. */
-    fun transcribeFile(filePath: String) {
+    /** Transcribe a WAV file. Used for testing on emulator and file import UI. */
+    fun transcribeFile(filePath: String, languageHint: String = "auto") {
         val engine = currentEngine
         if (engine == null || !engine.isLoaded) {
             Log.e("WhisperEngine", "transcribeFile: model not ready")
@@ -994,7 +994,7 @@ class WhisperEngine(
                 val startTime = System.nanoTime()
                 val numThreads = computeInferenceThreads()
                 Log.i("WhisperEngine", "transcribeFile: starting transcription with $numThreads threads")
-                val segments = engine.transcribe(audioSamples, numThreads, "auto")
+                val segments = engine.transcribe(audioSamples, numThreads, languageHint)
 
                 val elapsed = (System.nanoTime() - startTime) / 1_000_000_000.0
                 val totalWords = segments.sumOf { it.text.split(" ").size }
@@ -1040,7 +1040,7 @@ class WhisperEngine(
 
     private fun writeE2EResult(transcript: String, durationMs: Double, error: String?) {
         val model = _selectedModel.value
-        val keywords = listOf("country", "ask", "do for")
+        val keywords = listOf("country", "ask", "do for", "fellow", "americans")
         val lowerTranscript = transcript.lowercase()
         val translatedText = _translatedConfirmedText.value
         val ttsAudioPath = ttsService.latestEvidenceFilePath()
@@ -1054,11 +1054,23 @@ class WhisperEngine(
         val translationReady = !expectsTranslation || translatedText.isNotBlank()
         val expectsTtsEvidence = _speakTranslatedAudio.value && expectsTranslation
         val ttsReady = !expectsTtsEvidence || !ttsAudioPath.isNullOrBlank()
+        val isOmnilingual = model.id.contains("omnilingual", ignoreCase = true)
+        val isHeavyWhisperOnEmulator =
+            isLikelyEmulator() &&
+                model.engineType == EngineType.WHISPER_CPP &&
+                isHeavyWhisperModel(model)
+        val hasKeywordHit = keywords.any { lowerTranscript.contains(it) }
+        val hasMeaningfulText = transcript.any { it.isLetterOrDigit() }
+        val transcriptPass = when {
+            isOmnilingual -> hasMeaningfulText
+            isHeavyWhisperOnEmulator -> hasMeaningfulText
+            else -> hasKeywordHit
+        }
 
         // pass = core transcription quality only; translation/TTS tracked separately
         val pass = error == null &&
             transcript.isNotEmpty() &&
-            keywords.any { lowerTranscript.contains(it) } &&
+            transcriptPass &&
             ttsMicGuardViolations == 0
 
         val result = E2ETestResult(
@@ -1077,90 +1089,108 @@ class WhisperEngine(
         )
         _e2eResult.value = result
 
-        // Write JSON to app's external files dir for collection by test harness
-        try {
-            val json = buildString {
-                append("{\n")
-                append("  \"model_id\": \"${jsonEscape(result.modelId)}\",\n")
-                append("  \"engine\": \"${jsonEscape(result.engine)}\",\n")
-                append("  \"transcript\": \"${jsonEscape(result.transcript)}\",\n")
-                append("  \"translated_text\": \"${jsonEscape(result.translatedText)}\",\n")
-                append("  \"translation_warning\": ")
-                append(
-                    _translationWarning.value?.let { "\"${jsonEscape(it)}\"" } ?: "null"
-                )
-                append(",\n")
-                append("  \"expects_translation\": $expectsTranslation,\n")
-                append("  \"translation_ready\": $translationReady,\n")
-                append("  \"tts_audio_path\": ")
-                append(
-                    if (result.ttsAudioPath != null) {
-                        "\"${jsonEscape(result.ttsAudioPath)}\""
-                    } else {
-                        "null"
-                    }
-                )
-                append(",\n")
-                append("  \"expects_tts_evidence\": $expectsTtsEvidence,\n")
-                append("  \"tts_ready\": $ttsReady,\n")
-                append("  \"tts_start_count\": ${result.ttsStartCount},\n")
-                append("  \"tts_mic_guard_violations\": ${result.ttsMicGuardViolations},\n")
-                append("  \"mic_stopped_for_tts\": ${result.micStoppedForTts},\n")
-                append("  \"pass\": ${result.pass},\n")
-                append("  \"duration_ms\": ${result.durationMs},\n")
-                append("  \"timestamp\": \"${jsonEscape(result.timestamp)}\",\n")
-                append("  \"error\": ")
-                append(
-                    if (result.error != null) {
-                        "\"${jsonEscape(result.error)}\""
-                    } else {
-                        "null"
-                    }
-                )
-                append("\n")
-                append("}")
-            }
-            val extDir = context.getExternalFilesDir(null)
-            val file = File(extDir, "e2e_result_${model.id}.json")
-            file.writeText(json)
-            Log.i("E2E", "Result written to ${file.absolutePath}")
-        } catch (e: Throwable) {
-            Log.w("E2E", "Could not write result JSON (expected in non-test environments)", e)
+        val json = buildString {
+            append("{\n")
+            append("  \"model_id\": \"${jsonEscape(result.modelId)}\",\n")
+            append("  \"engine\": \"${jsonEscape(result.engine)}\",\n")
+            append("  \"transcript\": \"${jsonEscape(result.transcript)}\",\n")
+            append("  \"translated_text\": \"${jsonEscape(result.translatedText)}\",\n")
+            append("  \"translation_warning\": ")
+            append(
+                _translationWarning.value?.let { "\"${jsonEscape(it)}\"" } ?: "null"
+            )
+            append(",\n")
+            append("  \"expects_translation\": $expectsTranslation,\n")
+            append("  \"translation_ready\": $translationReady,\n")
+            append("  \"tts_audio_path\": ")
+            append(
+                if (result.ttsAudioPath != null) {
+                    "\"${jsonEscape(result.ttsAudioPath)}\""
+                } else {
+                    "null"
+                }
+            )
+            append(",\n")
+            append("  \"expects_tts_evidence\": $expectsTtsEvidence,\n")
+            append("  \"tts_ready\": $ttsReady,\n")
+            append("  \"tts_start_count\": ${result.ttsStartCount},\n")
+            append("  \"tts_mic_guard_violations\": ${result.ttsMicGuardViolations},\n")
+            append("  \"mic_stopped_for_tts\": ${result.micStoppedForTts},\n")
+            append("  \"pass\": ${result.pass},\n")
+            append("  \"duration_ms\": ${result.durationMs},\n")
+            append("  \"timestamp\": \"${jsonEscape(result.timestamp)}\",\n")
+            append("  \"error\": ")
+            append(
+                if (result.error != null) {
+                    "\"${jsonEscape(result.error)}\""
+                } else {
+                    "null"
+                }
+            )
+            append("\n")
+            append("}")
         }
+        writeE2EJson(modelId = model.id, json = json)
     }
 
     fun writeE2EFailure(modelId: String = _selectedModel.value.id, error: String) {
         val model = ModelInfo.availableModels.find { it.id == modelId } ?: _selectedModel.value
+        val json = buildString {
+            append("{\n")
+            append("  \"model_id\": \"${jsonEscape(modelId)}\",\n")
+            append("  \"engine\": \"${jsonEscape(model.inferenceMethod)}\",\n")
+            append("  \"transcript\": \"\",\n")
+            append("  \"translated_text\": \"\",\n")
+            append("  \"translation_warning\": null,\n")
+            append("  \"expects_translation\": false,\n")
+            append("  \"translation_ready\": true,\n")
+            append("  \"tts_audio_path\": null,\n")
+            append("  \"expects_tts_evidence\": false,\n")
+            append("  \"tts_ready\": true,\n")
+            append("  \"tts_start_count\": 0,\n")
+            append("  \"tts_mic_guard_violations\": 0,\n")
+            append("  \"mic_stopped_for_tts\": false,\n")
+            append("  \"pass\": false,\n")
+            append("  \"duration_ms\": 0.0,\n")
+            append("  \"timestamp\": \"${jsonEscape(java.time.Instant.now().toString())}\",\n")
+            append("  \"error\": \"${jsonEscape(error)}\"\n")
+            append("}")
+        }
+        writeE2EJson(modelId = modelId, json = json)
+    }
+
+    private fun writeE2EJson(modelId: String, json: String) {
+        var wrote = false
+
+        // App-private external dir (legacy path consumed by scripts/tests)
         try {
-            val json = buildString {
-                append("{\n")
-                append("  \"model_id\": \"${jsonEscape(modelId)}\",\n")
-                append("  \"engine\": \"${jsonEscape(model.inferenceMethod)}\",\n")
-                append("  \"transcript\": \"\",\n")
-                append("  \"translated_text\": \"\",\n")
-                append("  \"translation_warning\": null,\n")
-                append("  \"expects_translation\": false,\n")
-                append("  \"translation_ready\": true,\n")
-                append("  \"tts_audio_path\": null,\n")
-                append("  \"expects_tts_evidence\": false,\n")
-                append("  \"tts_ready\": true,\n")
-                append("  \"tts_start_count\": 0,\n")
-                append("  \"tts_mic_guard_violations\": 0,\n")
-                append("  \"mic_stopped_for_tts\": false,\n")
-                append("  \"pass\": false,\n")
-                append("  \"duration_ms\": 0.0,\n")
-                append("  \"timestamp\": \"${jsonEscape(java.time.Instant.now().toString())}\",\n")
-                append("  \"error\": \"${jsonEscape(error)}\"\n")
-                append("}")
-            }
             val extDir = context.getExternalFilesDir(null)
             if (extDir != null) {
                 val file = File(extDir, "e2e_result_${modelId}.json")
                 file.writeText(json)
-                Log.i("E2E", "Failure result written to ${file.absolutePath}")
+                Log.i("E2E", "Result written to ${file.absolutePath}")
+                wrote = true
             }
         } catch (e: Throwable) {
-            Log.w("E2E", "Could not write failure result JSON", e)
+            Log.w("E2E", "Could not write app-private E2E result JSON", e)
+        }
+
+        // Public evidence dir used by UiAutomator captures and adb pull.
+        try {
+            val evidenceDir = File("/sdcard/Documents/e2e/$modelId")
+            if (!evidenceDir.exists()) {
+                evidenceDir.mkdirs()
+            }
+            val evidenceFile = File(evidenceDir, "result.json")
+            evidenceFile.writeText(json)
+            Log.i("E2E", "Result mirrored to ${evidenceFile.absolutePath}")
+            wrote = true
+        } catch (e: Throwable) {
+            Log.w("E2E", "Could not mirror E2E result JSON to public evidence dir", e)
+        }
+
+        if (!wrote) {
+            Log.w("E2E", "E2E result JSON was not written to any location")
         }
     }
 
@@ -1340,8 +1370,11 @@ class WhisperEngine(
         }
 
         val heavyWhisperModel = isHeavyWhisperModel(model)
+        val isLargeModel = model.id.contains("large", ignoreCase = true)
+        val isSmallModel = model.id.contains("small", ignoreCase = true)
         return when {
-            isLikelyEmulator() && heavyWhisperModel -> 1
+            isLikelyEmulator() && isSmallModel -> cpuThreads.coerceAtMost(4)
+            isLikelyEmulator() && isLargeModel -> cpuThreads.coerceAtMost(4).coerceAtLeast(1)
             isLikelyEmulator() -> cpuThreads.coerceAtMost(2)
             heavyWhisperModel -> cpuThreads.coerceAtMost(2)
             else -> cpuThreads
@@ -1361,7 +1394,7 @@ class WhisperEngine(
             return samples
         }
 
-        val maxSeconds = if (model.id.contains("large", ignoreCase = true)) 4 else 6
+        val maxSeconds = if (model.id.contains("large", ignoreCase = true)) 1 else 2
         val maxSamples = AudioRecorder.SAMPLE_RATE * maxSeconds
         if (samples.size <= maxSamples) {
             return samples

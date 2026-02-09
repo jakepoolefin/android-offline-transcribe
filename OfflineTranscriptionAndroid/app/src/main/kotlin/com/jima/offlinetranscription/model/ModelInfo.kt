@@ -40,7 +40,7 @@ data class ModelInfo(
             "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17/resolve/main/"
 
         private const val OMNILINGUAL_300M_BASE_URL =
-            "https://huggingface.co/csukuangfj/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/resolve/main/"
+            "https://huggingface.co/csukuangfj2/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/resolve/main/"
 
         private fun moonshineFiles(baseUrl: String) = listOf(
             ModelFile("${baseUrl}preprocess.onnx", "preprocess.onnx"),
@@ -94,9 +94,11 @@ data class ModelInfo(
                 displayName = "Whisper Large V3 Turbo",
                 engineType = EngineType.WHISPER_CPP,
                 parameterCount = "809M",
-                sizeOnDisk = "~1.6 GB",
-                description = "Best accuracy. Requires 2+ GB RAM. Slow on emulator.",
-                files = listOf(ModelFile("${WHISPER_BASE_URL}ggml-large-v3-turbo.bin", "ggml-large-v3-turbo.bin"))
+                sizeOnDisk = "~834 MB",
+                description = "Best accuracy. Uses q8_0 fallback on Android for emulator stability.",
+                files = listOf(
+                    ModelFile("${WHISPER_BASE_URL}ggml-large-v3-turbo-q8_0.bin", "ggml-large-v3-turbo-q8_0.bin")
+                )
             ),
             ModelInfo(
                 id = "whisper-large-v3-turbo-compressed",

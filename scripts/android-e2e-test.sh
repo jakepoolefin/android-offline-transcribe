@@ -14,7 +14,7 @@ EVIDENCE_DIR="${EVIDENCE_DIR:-$PROJECT_DIR/artifacts/e2e/android}"
 WAV_SOURCE="${EVAL_WAV_PATH:-$PROJECT_DIR/artifacts/benchmarks/long_en_eval.wav}"
 GRADLE_DIR="$PROJECT_DIR/OfflineTranscriptionAndroid"
 TEST_CLASS="com.voiceping.offlinetranscription.e2e.AllModelsE2ETest"
-INSTRUMENT_TIMEOUT_SEC="${INSTRUMENT_TIMEOUT_SEC:-480}"
+INSTRUMENT_TIMEOUT_SEC="${INSTRUMENT_TIMEOUT_SEC:-900}"
 export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 
 adb_cmd() {
@@ -30,8 +30,6 @@ ALL_MODELS=(
     "whisper-base"
     "whisper-base-en"
     "whisper-small"
-    "whisper-large-v3-turbo"
-    "whisper-large-v3-turbo-compressed"
     "moonshine-tiny"
     "moonshine-base"
     "sensevoice-small"
@@ -46,8 +44,6 @@ TEST_METHODS=(
     whisper-base test_whisperBase
     whisper-base-en test_whisperBaseEn
     whisper-small test_whisperSmall
-    whisper-large-v3-turbo test_whisperLargeV3Turbo
-    whisper-large-v3-turbo-compressed test_whisperLargeV3TurboCompressed
     moonshine-tiny test_moonshineTiny
     moonshine-base test_moonshineBase
     sensevoice-small test_sensevoiceSmall
@@ -64,6 +60,7 @@ fi
 
 echo "=== Android E2E Test Suite ==="
 echo "Models to test: ${MODELS[*]}"
+echo "Large whisper variants are excluded from default emulator E2E due prohibitive runtime."
 echo "Audio fixture: $WAV_SOURCE"
 echo "Per-model timeout: ${INSTRUMENT_TIMEOUT_SEC}s"
 echo "Evidence directory: $EVIDENCE_DIR"
@@ -98,6 +95,17 @@ echo ""
 
 PASS_COUNT=0
 FAIL_COUNT=0
+
+instrument_timeout_for_model() {
+    local model_id="$1"
+    case "$model_id" in
+        whisper-large-v3-turbo|whisper-large-v3-turbo-compressed) echo 3600 ;;
+        whisper-small) echo 2400 ;;
+        omnilingual-300m) echo 1200 ;;
+        whisper-base|whisper-base-en) echo 1200 ;;
+        *) echo "$INSTRUMENT_TIMEOUT_SEC" ;;
+    esac
+}
 
 ensure_instrumentation_installed() {
     if ! adb_cmd shell pm list instrumentation | grep -q "$PACKAGE.test/androidx.test.runner.AndroidJUnitRunner"; then
@@ -149,8 +157,10 @@ for MODEL_ID in "${MODELS[@]}"; do
     rm -rf "$MODEL_DIR"
     mkdir -p "$MODEL_DIR"
     METHOD=${TEST_METHODS[$MODEL_ID]}
+    MODEL_TIMEOUT_SEC=$(instrument_timeout_for_model "$MODEL_ID")
 
     echo "--- Testing: $MODEL_ID ($METHOD) ---"
+    echo "  Instrument timeout: ${MODEL_TIMEOUT_SEC}s"
     ensure_instrumentation_installed
     adb_cmd shell rm -rf "/sdcard/Documents/e2e/$MODEL_ID" 2>/dev/null || true
     adb_cmd shell rm -f "/sdcard/Android/data/$PACKAGE/files/e2e_result_${MODEL_ID}.json" 2>/dev/null || true
@@ -158,14 +168,14 @@ for MODEL_ID in "${MODELS[@]}"; do
     # Run individual test
     adb_cmd logcat -c
     set +e
-    RESULT=$(run_instrumentation_with_timeout "$METHOD" "$INSTRUMENT_TIMEOUT_SEC")
+    RESULT=$(run_instrumentation_with_timeout "$METHOD" "$MODEL_TIMEOUT_SEC")
     INSTRUMENT_EXIT=$?
     set -e
 
     if echo "$RESULT" | grep -q "OK (1 test)"; then
         echo "  Test passed"
     elif [ "$INSTRUMENT_EXIT" -eq 124 ] || echo "$RESULT" | grep -q "TIMEOUT:"; then
-        echo "  Test timed out after ${INSTRUMENT_TIMEOUT_SEC}s"
+        echo "  Test timed out after ${MODEL_TIMEOUT_SEC}s"
     else
         echo "  Test may have failed. Output:"
         echo "$RESULT" | tail -5

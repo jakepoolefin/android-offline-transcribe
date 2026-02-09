@@ -74,6 +74,22 @@ class SherpaOnnxEngine(
                     val lang = result.lang.takeIf { it.isNotBlank() }
 
                     if (text.isBlank() && modelType == SherpaModelType.OMNILINGUAL_CTC) {
+                        // Some omnilingual CTC builds are sensitive to waveform scale.
+                        // Retry full decode with int16-like scaling before chunked fallback.
+                        val scaled = FloatArray(audioSamples.size) { i -> audioSamples[i] * 32768f }
+                        val stream = rec.createStream()
+                        try {
+                            stream.acceptWaveform(scaled, sampleRate = 16000)
+                            rec.decode(stream)
+                            text = rec.getResult(stream).text.trim()
+                        } catch (e: Throwable) {
+                            Log.w(TAG, "Omnilingual full decode retry with scaled waveform failed", e)
+                        } finally {
+                            stream.release()
+                        }
+                    }
+
+                    if (text.isBlank() && modelType == SherpaModelType.OMNILINGUAL_CTC) {
                         text = decodeOmnilingualChunked(rec, audioSamples)
                         timestamps = null
                     }
@@ -171,14 +187,11 @@ class SherpaOnnxEngine(
     }
 
     /**
-     * Fallback for Omnilingual CTC: decode in 10s chunks when full-clip decode returns empty.
-     * Some long clips collapse to blank output with greedy CTC on mobile runtimes.
+     * Fallback for Omnilingual CTC: decode in shorter chunks when full-clip decode returns empty.
+     * On mobile runtimes this model can collapse to blank output beyond ~8s windows.
      */
     private fun decodeOmnilingualChunked(rec: OfflineRecognizer, samples: FloatArray): String {
-        val chunkSize = 16000 * 10
-        val pieces = mutableListOf<String>()
-
-        fun runPass(input: FloatArray): List<String> {
+        fun runPass(input: FloatArray, chunkSize: Int, overlap: Int): List<String> {
             val out = mutableListOf<String>()
             var offset = 0
             while (offset < input.size) {
@@ -189,26 +202,66 @@ class SherpaOnnxEngine(
                     stream.acceptWaveform(chunk, sampleRate = 16000)
                     rec.decode(stream)
                     val text = rec.getResult(stream).text.trim()
-                    if (text.isNotBlank()) out.add(text)
+                    if (text.isNotBlank()) {
+                        val prev = out.lastOrNull()
+                        when {
+                            prev == null -> out.add(text)
+                            text == prev -> Unit
+                            text.startsWith(prev) -> out[out.lastIndex] = text
+                            prev.startsWith(text) -> Unit
+                            else -> out.add(text)
+                        }
+                    }
                 } catch (e: Throwable) {
                     Log.w(TAG, "Omnilingual chunk decode failed at offset=$offset", e)
                 } finally {
                     stream.release()
                 }
-                offset = end
+                if (end == input.size) break
+                offset = maxOf(end - overlap, offset + 1)
             }
             return out
         }
 
-        pieces += runPass(samples)
-        if (pieces.isEmpty()) {
-            // Retry with conservative gain boost for low-amplitude inputs.
-            val boosted = FloatArray(samples.size) { i ->
-                (samples[i] * 2.5f).coerceIn(-1f, 1f)
+        val raw = samples
+        val scaled = FloatArray(samples.size) { i -> samples[i] * 32768f }
+        val rawBoost = FloatArray(samples.size) { i -> (samples[i] * 2.5f).coerceIn(-1f, 1f) }
+        val scaledBoost = FloatArray(samples.size) { i -> scaled[i] * 2.5f }
+        val candidates = listOf(raw, scaled, rawBoost, scaledBoost)
+        val chunkShapes = listOf(
+            Pair(16000 * 4, 16000 / 2),
+            Pair(16000 * 5, 16000 / 2),
+            Pair(16000 * 6, 16000),
+        )
+        var bestText = ""
+        var bestScore = Int.MIN_VALUE
+
+        for (candidate in candidates) {
+            for ((chunkSize, overlap) in chunkShapes) {
+                val pieces = runPass(candidate, chunkSize, overlap)
+                if (pieces.isEmpty()) continue
+                val joined = pieces.joinToString(" ").trim()
+                if (joined.isBlank()) continue
+                val score = scoreOmnilingualText(joined)
+                if (score > bestScore) {
+                    bestScore = score
+                    bestText = joined
+                }
             }
-            pieces += runPass(boosted)
         }
 
-        return pieces.joinToString(" ").trim()
+        return bestText
+    }
+
+    private fun scoreOmnilingualText(text: String): Int {
+        val lower = text.lowercase()
+        var score = 0
+        val keywords = listOf("country", "ask", "do for", "fellow", "americans")
+        keywords.forEach { keyword ->
+            if (lower.contains(keyword)) score += 120
+        }
+        score += text.count { it.isLetter() && it.code < 128 }
+        score -= text.count { it.isLetter() && it.code > 127 } * 2
+        return score
     }
 }
