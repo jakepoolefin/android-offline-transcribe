@@ -446,6 +446,7 @@ class WhisperEngine(
         if (normalized.isEmpty()) return
         _translationSourceLanguageCode.value = normalized
         preferences.setTranslationSourceLanguage(normalized)
+        lastTranslationInput = null  // Force re-translation with new language
         scheduleTranslationUpdate()
     }
 
@@ -454,6 +455,7 @@ class WhisperEngine(
         if (normalized.isEmpty()) return
         _translationTargetLanguageCode.value = normalized
         preferences.setTranslationTargetLanguage(normalized)
+        lastTranslationInput = null  // Force re-translation with new language
         scheduleTranslationUpdate()
     }
 
@@ -959,12 +961,14 @@ class WhisperEngine(
         if (engine == null || !engine.isLoaded) {
             Log.e("WhisperEngine", "transcribeFile: model not ready")
             _lastError.value = AppError.ModelNotReady()
+            writeE2EFailure(error = "model not ready")
             return
         }
 
         // Guard: ignore if already busy transcribing
         if (_sessionState.value == SessionState.Recording) {
             Log.w("WhisperEngine", "transcribeFile: already busy, ignoring")
+            writeE2EFailure(error = "engine busy")
             return
         }
 
@@ -1122,6 +1126,41 @@ class WhisperEngine(
             Log.i("E2E", "Result written to ${file.absolutePath}")
         } catch (e: Throwable) {
             Log.w("E2E", "Could not write result JSON (expected in non-test environments)", e)
+        }
+    }
+
+    fun writeE2EFailure(modelId: String = _selectedModel.value.id, error: String) {
+        val model = ModelInfo.availableModels.find { it.id == modelId } ?: _selectedModel.value
+        try {
+            val json = buildString {
+                append("{\n")
+                append("  \"model_id\": \"${jsonEscape(modelId)}\",\n")
+                append("  \"engine\": \"${jsonEscape(model.inferenceMethod)}\",\n")
+                append("  \"transcript\": \"\",\n")
+                append("  \"translated_text\": \"\",\n")
+                append("  \"translation_warning\": null,\n")
+                append("  \"expects_translation\": false,\n")
+                append("  \"translation_ready\": true,\n")
+                append("  \"tts_audio_path\": null,\n")
+                append("  \"expects_tts_evidence\": false,\n")
+                append("  \"tts_ready\": true,\n")
+                append("  \"tts_start_count\": 0,\n")
+                append("  \"tts_mic_guard_violations\": 0,\n")
+                append("  \"mic_stopped_for_tts\": false,\n")
+                append("  \"pass\": false,\n")
+                append("  \"duration_ms\": 0.0,\n")
+                append("  \"timestamp\": \"${jsonEscape(java.time.Instant.now().toString())}\",\n")
+                append("  \"error\": \"${jsonEscape(error)}\"\n")
+                append("}")
+            }
+            val extDir = context.getExternalFilesDir(null)
+            if (extDir != null) {
+                val file = File(extDir, "e2e_result_${modelId}.json")
+                file.writeText(json)
+                Log.i("E2E", "Failure result written to ${file.absolutePath}")
+            }
+        } catch (e: Throwable) {
+            Log.w("E2E", "Could not write failure result JSON", e)
         }
     }
 
