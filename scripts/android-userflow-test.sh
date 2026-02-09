@@ -25,7 +25,7 @@ ALL_TESTS=(
     "test_07_copyTranscript"
     "test_08_clearTranscription"
     "test_09_recordWhileNoModel"
-    "test_10_copyTextViaOverflowMenu"
+    "test_10_copyTextViaSettings"
 )
 
 if [ $# -gt 0 ]; then
