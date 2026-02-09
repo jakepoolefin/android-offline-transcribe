@@ -87,6 +87,9 @@ dependencies {
     // sherpa-onnx (offline ASR: Moonshine, SenseVoice)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 
+    // Google ML Kit Translation (offline)
+    implementation(libs.mlkit.translate)
+
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)

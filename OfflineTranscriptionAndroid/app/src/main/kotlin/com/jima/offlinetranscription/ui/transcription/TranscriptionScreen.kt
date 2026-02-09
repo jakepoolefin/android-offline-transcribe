@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -183,6 +185,48 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                     )
                 }
+
+                // Translation output
+                if (translationEnabled && (translatedConfirmedText.isNotBlank() || translatedHypothesisText.isNotBlank())) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text(
+                        text = "Translation ($translationSourceLanguage \u2192 $translationTargetLanguage)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    if (translatedConfirmedText.isNotBlank()) {
+                        Text(
+                            text = translatedConfirmedText,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    if (translatedHypothesisText.isNotBlank()) {
+                        Text(
+                            text = translatedHypothesisText,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                            fontStyle = FontStyle.Italic
+                        )
+                    }
+                }
+
+                translationDownloadStatus?.let { status ->
+                    Text(
+                        text = status,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                translationWarning?.let { warning ->
+                    Text(
+                        text = warning,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
 
             HorizontalDivider()
@@ -303,6 +347,9 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
             selectedModel = selectedModel,
             useVAD = useVAD,
             enableTimestamps = enableTimestamps,
+            translationEnabled = translationEnabled,
+            translationSourceLanguage = translationSourceLanguage,
+            translationTargetLanguage = translationTargetLanguage,
             fullText = viewModel.fullText,
             onCopyText = { clipboardManager.setText(AnnotatedString(viewModel.fullText)) },
             onClearTranscription = { viewModel.clearTranscription() },
@@ -313,6 +360,9 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
             },
             onVADChange = { viewModel.setUseVAD(it) },
             onTimestampsChange = { viewModel.setEnableTimestamps(it) },
+            onTranslationEnabledChange = { viewModel.setTranslationEnabled(it) },
+            onSourceLanguageChange = { viewModel.setTranslationSourceLanguageCode(it) },
+            onTargetLanguageChange = { viewModel.setTranslationTargetLanguageCode(it) },
             onDismiss = { showSettings = false }
         )
     }
@@ -324,12 +374,18 @@ private fun SettingsBottomSheet(
     selectedModel: ModelInfo,
     useVAD: Boolean,
     enableTimestamps: Boolean,
+    translationEnabled: Boolean,
+    translationSourceLanguage: String,
+    translationTargetLanguage: String,
     fullText: String,
     onCopyText: () -> Unit,
     onClearTranscription: () -> Unit,
     onChangeModel: () -> Unit,
     onVADChange: (Boolean) -> Unit,
     onTimestampsChange: (Boolean) -> Unit,
+    onTranslationEnabledChange: (Boolean) -> Unit,
+    onSourceLanguageChange: (String) -> Unit,
+    onTargetLanguageChange: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = androidx.compose.material3.rememberModalBottomSheetState()
@@ -434,6 +490,70 @@ private fun SettingsBottomSheet(
             ) {
                 Text("Enable Timestamps")
                 Switch(checked = enableTimestamps, onCheckedChange = onTimestampsChange)
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            Text(
+                text = "Translation (ML Kit)",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Enable Translation")
+                Switch(checked = translationEnabled, onCheckedChange = onTranslationEnabledChange)
+            }
+
+            if (translationEnabled) {
+                var srcExpanded by remember { mutableStateOf(false) }
+                var tgtExpanded by remember { mutableStateOf(false) }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Source")
+                    Box {
+                        OutlinedButton(onClick = { srcExpanded = true }) {
+                            Text(translationSourceLanguage)
+                        }
+                        LanguageDropdown(
+                            expanded = srcExpanded,
+                            onDismiss = { srcExpanded = false },
+                            onSelect = { onSourceLanguageChange(it); srcExpanded = false }
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Target")
+                    Box {
+                        OutlinedButton(onClick = { tgtExpanded = true }) {
+                            Text(translationTargetLanguage)
+                        }
+                        LanguageDropdown(
+                            expanded = tgtExpanded,
+                            onDismiss = { tgtExpanded = false },
+                            onSelect = { onTargetLanguageChange(it); tgtExpanded = false }
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -612,6 +732,45 @@ private fun ResourceStatsBar(viewModel: TranscriptionViewModel, isRecording: Boo
                 text = String.format("%.1f tok/s", tokensPerSecond),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private val COMMON_LANGUAGES = listOf(
+    "en" to "English",
+    "ja" to "Japanese",
+    "zh" to "Chinese",
+    "ko" to "Korean",
+    "es" to "Spanish",
+    "fr" to "French",
+    "de" to "German",
+    "it" to "Italian",
+    "pt" to "Portuguese",
+    "ru" to "Russian",
+    "ar" to "Arabic",
+    "hi" to "Hindi",
+    "th" to "Thai",
+    "vi" to "Vietnamese",
+    "id" to "Indonesian",
+    "tr" to "Turkish",
+    "pl" to "Polish",
+    "nl" to "Dutch",
+    "sv" to "Swedish",
+    "uk" to "Ukrainian",
+)
+
+@Composable
+private fun LanguageDropdown(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        COMMON_LANGUAGES.forEach { (code, name) ->
+            DropdownMenuItem(
+                text = { Text("$name ($code)") },
+                onClick = { onSelect(code) }
             )
         }
     }

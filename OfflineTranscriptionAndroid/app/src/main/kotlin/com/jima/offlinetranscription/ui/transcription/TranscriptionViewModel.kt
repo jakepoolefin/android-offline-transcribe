@@ -12,13 +12,6 @@ class TranscriptionViewModel(
     val engine: WhisperEngine
 ) : ViewModel() {
 
-    init {
-        viewModelScope.launch {
-            engine.setTranslationEnabled(false)
-            engine.setSpeakTranslatedAudio(false)
-        }
-    }
-
     val isRecording = engine.isRecording
     val confirmedText = engine.confirmedText
     val hypothesisText = engine.hypothesisText
@@ -33,6 +26,16 @@ class TranscriptionViewModel(
     val cpuPercent = engine.cpuPercent
     val memoryMB = engine.memoryMB
     val e2eResult = engine.e2eResult
+
+    // Translation state
+    val translationEnabled = engine.translationEnabled
+    val translationSourceLanguage = engine.translationSourceLanguageCode
+    val translationTargetLanguage = engine.translationTargetLanguageCode
+    val translatedConfirmedText = engine.translatedConfirmedText
+    val translatedHypothesisText = engine.translatedHypothesisText
+    val translationWarning = engine.translationWarning
+    val translationModelReady = engine.translationModelReady
+    val translationDownloadStatus = engine.translationDownloadStatus
 
     val fullText: String
         get() = engine.fullTranscriptionText
@@ -89,6 +92,24 @@ class TranscriptionViewModel(
     fun setEnableTimestamps(enabled: Boolean) {
         viewModelScope.launch {
             engine.setEnableTimestamps(enabled)
+        }
+    }
+
+    fun setTranslationEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            engine.setTranslationEnabled(enabled)
+        }
+    }
+
+    fun setTranslationSourceLanguageCode(languageCode: String) {
+        viewModelScope.launch {
+            engine.setTranslationSourceLanguageCode(languageCode)
+        }
+    }
+
+    fun setTranslationTargetLanguageCode(languageCode: String) {
+        viewModelScope.launch {
+            engine.setTranslationTargetLanguageCode(languageCode)
         }
     }
 }

@@ -26,7 +26,7 @@ import kotlin.test.assertTrue
 class AllModelsE2ETest {
     companion object {
         private const val TAG = "E2E"
-        private const val PACKAGE = "com.voiceping.offlinetranscription"
+        private const val PACKAGE = "com.voiceping.transcribe"
     }
 
     private lateinit var device: UiDevice

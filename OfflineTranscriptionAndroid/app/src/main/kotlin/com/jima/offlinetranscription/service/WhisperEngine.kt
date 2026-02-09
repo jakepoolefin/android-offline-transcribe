@@ -16,19 +16,6 @@ import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 
-/**
- * Transcription-only stub: translation is disabled in this repo.
- * Keep this no-op adapter so the engine call sites remain stable.
- */
-private class AndroidNativeTranslator(@Suppress("UNUSED_PARAMETER") context: Context) {
-    suspend fun translate(
-        text: String,
-        @Suppress("UNUSED_PARAMETER") sourceLanguageCode: String,
-        @Suppress("UNUSED_PARAMETER") targetLanguageCode: String
-    ): String = text
-
-    fun close() {}
-}
 
 /**
  * Transcription-only stub: TTS is disabled in this repo.
@@ -170,6 +157,9 @@ class WhisperEngine(
     private val _translationWarning = MutableStateFlow<String?>(null)
     val translationWarning: StateFlow<String?> = _translationWarning.asStateFlow()
 
+    val translationModelReady: StateFlow<Boolean> get() = mlKitTranslator.modelReady
+    val translationDownloadStatus: StateFlow<String?> get() = mlKitTranslator.downloadStatus
+
     // System resource metrics (always sampled)
     private val systemMetrics = SystemMetrics()
     private val _cpuPercent = MutableStateFlow(0f)
@@ -192,12 +182,7 @@ class WhisperEngine(
     private val inferenceMutex = Mutex()
     private val sessionToken = AtomicLong(0)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val nativeTranslator: AndroidNativeTranslator? =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            AndroidNativeTranslator(context)
-        } else {
-            null
-        }
+    private val mlKitTranslator = MlKitTranslator()
     private val ttsService = AndroidTtsService(context)
     private var translationJob: Job? = null
     private var lastSpokenTranslatedConfirmed: String = ""
@@ -542,29 +527,81 @@ class WhisperEngine(
 
     fun stopRecording() {
         if (_sessionState.value != SessionState.Recording) return
-        invalidateSession()
         transitionTo(SessionState.Stopping)
+        // Stop mic input first so no new audio arrives
         audioRecorder.stopRecording()
-        transcriptionJob?.cancel()
         recordingJob?.cancel()
         energyJob?.cancel()
-        transcriptionJob = null
         recordingJob = null
         energyJob = null
+
+        // Drain final audio through the transcription engine before cleanup
+        val engine = currentEngine
+        if (engine != null && engine.isLoaded) {
+            // Feed any remaining buffered audio to the engine
+            val currentCount = audioRecorder.sampleCount
+            if (currentCount > lastBufferSize) {
+                val remaining = audioRecorder.samplesRange(lastBufferSize, currentCount)
+                if (remaining.isNotEmpty() && engine.isStreaming) {
+                    engine.feedAudio(remaining)
+                    lastBufferSize = currentCount
+                }
+            }
+            // Flush the streaming decoder
+            if (engine.isStreaming) {
+                val finalResult = engine.drainFinalAudio()
+                if (finalResult != null && finalResult.text.isNotBlank()) {
+                    chunkManager.confirmedSegments.add(finalResult)
+                    _confirmedText.value = chunkManager.renderSegmentsText(chunkManager.confirmedSegments)
+                    _hypothesisText.value = ""
+                    chunkManager.confirmedText = _confirmedText.value
+                    scheduleTranslationUpdate()
+                }
+            }
+        }
+
+        // Now invalidate and clean up
+        invalidateSession()
+        transcriptionJob?.cancel()
+        transcriptionJob = null
         transitionTo(SessionState.Idle)
     }
 
     private suspend fun stopRecordingAndWait() {
         if (_sessionState.value != SessionState.Recording) return
-        invalidateSession()
         transitionTo(SessionState.Stopping)
         audioRecorder.stopRecording()
-        transcriptionJob?.cancelAndJoin()
         recordingJob?.cancelAndJoin()
         energyJob?.cancelAndJoin()
-        transcriptionJob = null
         recordingJob = null
         energyJob = null
+
+        // Drain final audio
+        val engine = currentEngine
+        if (engine != null && engine.isLoaded) {
+            val currentCount = audioRecorder.sampleCount
+            if (currentCount > lastBufferSize) {
+                val remaining = audioRecorder.samplesRange(lastBufferSize, currentCount)
+                if (remaining.isNotEmpty() && engine.isStreaming) {
+                    engine.feedAudio(remaining)
+                    lastBufferSize = currentCount
+                }
+            }
+            if (engine.isStreaming) {
+                val finalResult = engine.drainFinalAudio()
+                if (finalResult != null && finalResult.text.isNotBlank()) {
+                    chunkManager.confirmedSegments.add(finalResult)
+                    _confirmedText.value = chunkManager.renderSegmentsText(chunkManager.confirmedSegments)
+                    _hypothesisText.value = ""
+                    chunkManager.confirmedText = _confirmedText.value
+                    scheduleTranslationUpdate()
+                }
+            }
+        }
+
+        invalidateSession()
+        transcriptionJob?.cancelAndJoin()
+        transcriptionJob = null
         transitionTo(SessionState.Idle)
     }
 
@@ -615,9 +652,21 @@ class WhisperEngine(
                 }
             }
         } finally {
-            // Do not run NonCancellable final inference during teardown.
-            // Previous implementation could keep old sessions alive after stop(),
-            // causing stacked background inference and progressive latency.
+            // Final transcription pass for any remaining buffered audio.
+            // stopRecording() handles streaming engines; this handles offline engines.
+            val engine = currentEngine
+            if (engine != null && !engine.isStreaming && engine.isLoaded) {
+                val currentCount = audioRecorder.sampleCount
+                if (currentCount > lastBufferSize) {
+                    try {
+                        withContext(NonCancellable) {
+                            transcribeCurrentBuffer(sessionToken)
+                        }
+                    } catch (_: Throwable) {
+                        // Best-effort final pass
+                    }
+                }
+            }
             transcriptionJob = null
             if (isSessionActive(sessionToken)) {
                 audioRecorder.stopRecording()
@@ -677,15 +726,28 @@ class WhisperEngine(
                 }
             }
         } finally {
-            // Only finalize trailing text if this session is still active.
-            if (currentCoroutineContext().isActive && isSessionActive(sessionToken)) {
-                val finalResult = engine.getStreamingResult()
+            // Feed any remaining audio and drain the streaming decoder.
+            // stopRecording() already handles this for normal stop flow,
+            // but this covers cancellation and error paths too.
+            try {
+                val currentCount = audioRecorder.sampleCount
+                if (currentCount > lastBufferSize) {
+                    val remaining = audioRecorder.samplesRange(lastBufferSize, currentCount)
+                    if (remaining.isNotEmpty()) {
+                        engine.feedAudio(remaining)
+                        lastBufferSize = currentCount
+                    }
+                }
+                val finalResult = engine.drainFinalAudio()
                 if (finalResult != null && finalResult.text.isNotBlank()) {
                     chunkManager.confirmedSegments.add(finalResult)
                     _confirmedText.value = chunkManager.renderSegmentsText(chunkManager.confirmedSegments)
                     _hypothesisText.value = ""
+                    chunkManager.confirmedText = _confirmedText.value
                     scheduleTranslationUpdate()
                 }
+            } catch (_: Throwable) {
+                // Best-effort drain
             }
             transcriptionJob = null
             if (isSessionActive(sessionToken)) {
@@ -1152,9 +1214,7 @@ class WhisperEngine(
                     translatedConfirmed = if (confirmedSnapshot.isBlank()) {
                         ""
                     } else {
-                        val translator = nativeTranslator
-                            ?: throw UnsupportedOperationException("Native translation requires Android 12+.")
-                        translator.translate(
+                        mlKitTranslator.translate(
                             text = confirmedSnapshot,
                             sourceLanguageCode = sourceLanguageCode,
                             targetLanguageCode = targetLanguageCode
@@ -1164,9 +1224,7 @@ class WhisperEngine(
                     translatedHypothesis = if (hypothesisSnapshot.isBlank()) {
                         ""
                     } else {
-                        val translator = nativeTranslator
-                            ?: throw UnsupportedOperationException("Native translation requires Android 12+.")
-                        translator.translate(
+                        mlKitTranslator.translate(
                             text = hypothesisSnapshot,
                             sourceLanguageCode = sourceLanguageCode,
                             targetLanguageCode = targetLanguageCode
@@ -1175,7 +1233,7 @@ class WhisperEngine(
                 } catch (e: UnsupportedOperationException) {
                     translatedConfirmed = confirmedSnapshot
                     translatedHypothesis = hypothesisSnapshot
-                    warningMessage = AppError.TranslationUnavailable().message
+                    warningMessage = e.message ?: AppError.TranslationUnavailable().message
                 } catch (e: Throwable) {
                     if (e is CancellationException) return@launch
                     translatedConfirmed = confirmedSnapshot
@@ -1370,7 +1428,7 @@ class WhisperEngine(
         }
         translationJob?.cancel()
         scope.cancel()
-        nativeTranslator?.close()
+        mlKitTranslator.close()
         ttsService.setPlaybackStateListener(null)
         ttsService.shutdown()
         currentEngine?.release()

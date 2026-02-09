@@ -168,6 +168,37 @@ class SherpaOnnxStreamingEngine : AsrEngine {
         }
     }
 
+    override fun drainFinalAudio(): TranscriptionSegment? {
+        // Wait for any pending decode work to complete
+        val latch = java.util.concurrent.CountDownLatch(1)
+        try {
+            decodeExecutor.execute { latch.countDown() }
+            latch.await(2, TimeUnit.SECONDS)
+        } catch (_: Exception) {}
+
+        return lock.withLock {
+            val rec = recognizer ?: return null
+            val s = stream ?: return null
+            try {
+                s.inputFinished()
+                while (rec.isReady(s)) {
+                    rec.decode(s)
+                }
+                val result = rec.getResult(s)
+                val text = result.text.trim()
+                Log.d(TAG, "drainFinalAudio: text='$text'")
+                // Reset stream for potential reuse
+                rec.reset(s)
+                latestText = ""
+                if (text.isBlank()) null
+                else TranscriptionSegment(text = text, startMs = 0, endMs = 0)
+            } catch (e: Throwable) {
+                Log.e(TAG, "drainFinalAudio failed", e)
+                null
+            }
+        }
+    }
+
     override fun release() {
         decodeExecutor.shutdown()
         try {

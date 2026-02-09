@@ -37,4 +37,8 @@ interface AsrEngine {
 
     /** Reset streaming state for the next utterance after endpoint detection. */
     fun resetStreamingState() {}
+
+    /** Signal end of audio input and flush any remaining buffered audio through the decoder.
+     *  Returns the final transcription segment, or null if nothing remains. */
+    fun drainFinalAudio(): TranscriptionSegment? = null
 }
