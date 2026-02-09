@@ -87,14 +87,22 @@ class AllModelsE2ETest {
         // 3. Wait for app to start, then screenshot
         device.wait(Until.hasObject(By.pkg(PACKAGE).depth(0)), 10_000)
         Thread.sleep(3000)
+        dismissSystemUiDialogIfPresent(modelId)
         takeScreenshot(evidenceDir, "01_model_selected.png")
         Log.i(TAG, "[$modelId] Screenshot 01 captured")
 
-        // 4. Wait for transcription screen (model loaded) — look for "CPU" text in stats bar
-        val cpuFound = device.wait(
-            Until.hasObject(By.textContains("CPU")),
-            timeoutMs
-        )
+        // 4. Wait for transcription screen (model loaded) — look for "CPU" text in stats bar.
+        // Poll in a loop so we can dismiss blocking system dialogs (ANR popups) during long loads.
+        val loadStart = System.currentTimeMillis()
+        var cpuFound = false
+        while (System.currentTimeMillis() - loadStart < timeoutMs) {
+            dismissSystemUiDialogIfPresent(modelId)
+            if (device.hasObject(By.textContains("CPU"))) {
+                cpuFound = true
+                break
+            }
+            Thread.sleep(1000)
+        }
         if (cpuFound) {
             Log.i(TAG, "[$modelId] Model loaded — transcription screen visible")
         } else {
@@ -109,6 +117,7 @@ class AllModelsE2ETest {
         val startWait = System.currentTimeMillis()
         var resultExists = false
         while (System.currentTimeMillis() - startWait < evidenceTimeout) {
+            dismissSystemUiDialogIfPresent(modelId)
             // Check if result.json was written (fast path)
             if (File(resultSrc).exists()) {
                 resultExists = true
@@ -174,6 +183,41 @@ class AllModelsE2ETest {
         }
 
         Log.i(TAG, "[$modelId] E2E PASSED")
+    }
+
+    /**
+     * Emulator-heavy model runs can trigger Android system ANR dialogs
+     * ("System UI isn't responding"), which block UiAutomator waits.
+     * Prefer "Wait" to keep the app process alive.
+     */
+    private fun dismissSystemUiDialogIfPresent(modelId: String): Boolean {
+        val anrTitle = device.findObject(By.textContains("isn't responding"))
+            ?: device.findObject(By.textContains("keeps stopping"))
+            ?: return false
+
+        val waitButton = device.findObject(By.textContains("Wait"))
+            ?: device.findObject(By.textContains("wait"))
+        if (waitButton != null) {
+            waitButton.click()
+            Log.w(TAG, "[$modelId] Dismissed system dialog with 'Wait': ${anrTitle.text}")
+            Thread.sleep(500)
+            return true
+        }
+
+        val closeButton = device.findObject(By.textContains("Close app"))
+            ?: device.findObject(By.textContains("close app"))
+        if (closeButton != null) {
+            closeButton.click()
+            Log.w(TAG, "[$modelId] Dismissed system dialog with 'Close app': ${anrTitle.text}")
+            Thread.sleep(500)
+            return true
+        }
+
+        // Last resort: back out of modal dialog
+        device.pressBack()
+        Thread.sleep(300)
+        Log.w(TAG, "[$modelId] Dismissed system dialog via back press")
+        return true
     }
 
     private fun takeScreenshot(dir: String, filename: String) {

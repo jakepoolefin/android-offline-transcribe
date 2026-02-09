@@ -59,21 +59,30 @@ class SherpaOnnxEngine(
         return withContext(Dispatchers.IO) {
             lock.withLock {
                 val rec = recognizer ?: return@withContext emptyList()
-                val stream = rec.createStream()
                 try {
-                    stream.acceptWaveform(audioSamples, sampleRate = 16000)
-                    rec.decode(stream)
-                    val result = rec.getResult(stream)
+                    val stream = rec.createStream()
+                    val result = try {
+                        stream.acceptWaveform(audioSamples, sampleRate = 16000)
+                        rec.decode(stream)
+                        rec.getResult(stream)
+                    } finally {
+                        stream.release()
+                    }
 
-                    if (result.text.isBlank()) return@withContext emptyList()
-
+                    var text = result.text.trim()
+                    var timestamps: FloatArray? = result.timestamps
                     val lang = result.lang.takeIf { it.isNotBlank() }
-                    buildSegments(result.text, result.timestamps, lang)
+
+                    if (text.isBlank() && modelType == SherpaModelType.OMNILINGUAL_CTC) {
+                        text = decodeOmnilingualChunked(rec, audioSamples)
+                        timestamps = null
+                    }
+
+                    if (text.isBlank()) return@withContext emptyList()
+                    buildSegments(text, timestamps, lang)
                 } catch (e: Throwable) {
                     Log.e(TAG, "Sherpa transcribe failed", e)
                     emptyList()
-                } finally {
-                    stream.release()
                 }
             }
         }
@@ -159,5 +168,47 @@ class SherpaOnnxEngine(
             text = text.trim(), startMs = 0, endMs = 0,
             detectedLanguage = detectedLanguage
         ))
+    }
+
+    /**
+     * Fallback for Omnilingual CTC: decode in 10s chunks when full-clip decode returns empty.
+     * Some long clips collapse to blank output with greedy CTC on mobile runtimes.
+     */
+    private fun decodeOmnilingualChunked(rec: OfflineRecognizer, samples: FloatArray): String {
+        val chunkSize = 16000 * 10
+        val pieces = mutableListOf<String>()
+
+        fun runPass(input: FloatArray): List<String> {
+            val out = mutableListOf<String>()
+            var offset = 0
+            while (offset < input.size) {
+                val end = (offset + chunkSize).coerceAtMost(input.size)
+                val chunk = input.copyOfRange(offset, end)
+                val stream = rec.createStream()
+                try {
+                    stream.acceptWaveform(chunk, sampleRate = 16000)
+                    rec.decode(stream)
+                    val text = rec.getResult(stream).text.trim()
+                    if (text.isNotBlank()) out.add(text)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Omnilingual chunk decode failed at offset=$offset", e)
+                } finally {
+                    stream.release()
+                }
+                offset = end
+            }
+            return out
+        }
+
+        pieces += runPass(samples)
+        if (pieces.isEmpty()) {
+            // Retry with conservative gain boost for low-amplitude inputs.
+            val boosted = FloatArray(samples.size) { i ->
+                (samples[i] * 2.5f).coerceIn(-1f, 1f)
+            }
+            pieces += runPass(boosted)
+        }
+
+        return pieces.joinToString(" ").trim()
     }
 }
