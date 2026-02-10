@@ -5,21 +5,21 @@
 ._*
 
 # === Android ===
-OfflineTranscriptionAndroid/.gradle/
-OfflineTranscriptionAndroid/build/
-OfflineTranscriptionAndroid/app/build/
-OfflineTranscriptionAndroid/local.properties
-OfflineTranscriptionAndroid/.cxx/
-OfflineTranscriptionAndroid/app/.cxx/
-OfflineTranscriptionAndroid/captures/
-OfflineTranscriptionAndroid/.kotlin/
+VoicePingAndroidOfflineTranscribe/.gradle/
+VoicePingAndroidOfflineTranscribe/build/
+VoicePingAndroidOfflineTranscribe/app/build/
+VoicePingAndroidOfflineTranscribe/local.properties
+VoicePingAndroidOfflineTranscribe/.cxx/
+VoicePingAndroidOfflineTranscribe/app/.cxx/
+VoicePingAndroidOfflineTranscribe/captures/
+VoicePingAndroidOfflineTranscribe/.kotlin/
 
 # Android Studio / IntelliJ
-OfflineTranscriptionAndroid/.idea/
+VoicePingAndroidOfflineTranscribe/.idea/
 *.iml
 
 # sherpa-onnx binaries (download from GitHub releases, see README)
-OfflineTranscriptionAndroid/app/libs/*.aar
+VoicePingAndroidOfflineTranscribe/app/libs/*.aar
 
 # === IDE ===
 .idea/
@@ -40,7 +40,7 @@ artifacts/
 screenshots/
 
 # === Room Schema Exports (using manual migrations) ===
-OfflineTranscriptionAndroid/app/schemas/
+VoicePingAndroidOfflineTranscribe/app/schemas/
 
 # === Claude Code ===
 .claude/

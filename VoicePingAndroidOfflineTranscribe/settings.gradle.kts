@@ -16,5 +16,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OfflineTranscription"
+rootProject.name = "VoicePingAndroidOfflineTranscribe"
 include(":app")

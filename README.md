@@ -1,4 +1,4 @@
-# Offline Transcription (Android)
+# VoicePing Android Offline Transcribe
 
 Android app for **fully offline speech-to-text transcription and translation** — all inference runs on-device with no cloud dependency.
 
@@ -123,13 +123,13 @@ Google ML Kit Translation provides fully offline text translation. Each language
 ```bash
 # Clone with submodules
 git clone --recurse-submodules <repo-url>
-cd repo-android-transcription-only
+cd voiceping-android-offline-transcribe
 
 # Download sherpa-onnx AAR (v1.12.23, ~37 MB)
-./OfflineTranscriptionAndroid/setup-deps.sh
+./VoicePingAndroidOfflineTranscribe/setup-deps.sh
 
 # Build
-cd OfflineTranscriptionAndroid
+cd VoicePingAndroidOfflineTranscribe
 JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
   ./gradlew assembleDebug
 ```
@@ -138,7 +138,7 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
 
 ```bash
 # Unit tests (170 tests, 8 classes)
-cd OfflineTranscriptionAndroid
+cd VoicePingAndroidOfflineTranscribe
 JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
   ./gradlew testDebugUnitTest
 ```
