@@ -1,5 +1,7 @@
 # VoicePing Android Offline Transcribe
 
+[![Android Build](https://github.com/voiceping-ai/voiceping-android-offline-transcribe/actions/workflows/android-build.yml/badge.svg)](https://github.com/voiceping-ai/voiceping-android-offline-transcribe/actions/workflows/android-build.yml)
+
 Android app for **fully offline speech-to-text transcription and translation** — all inference runs on-device with no cloud dependency.
 
 Record speech from the microphone and transcribe it locally using multiple ASR engines (Whisper, Moonshine, SenseVoice, Zipformer). Translate transcribed text offline via Google ML Kit. Models are downloaded once from HuggingFace, then everything works completely offline.
