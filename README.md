@@ -233,3 +233,4 @@ Model weights are downloaded at runtime and have their own licenses — see `NOT
 ## Creator
 
 Created by **Akinori Nakajima** ([atyenoria](https://github.com/atyenoria)).
+# voiceping-android-offline-transcribe
