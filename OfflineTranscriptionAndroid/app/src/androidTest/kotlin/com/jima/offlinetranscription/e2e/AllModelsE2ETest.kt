@@ -169,25 +169,13 @@ class AllModelsE2ETest {
                 payload.optBoolean("pass", false),
                 "[$modelId] Expected pass=true in result.json, got: $json"
             )
-            assertTrue(
-                payload.optInt("tts_mic_guard_violations", -1) == 0,
-                "[$modelId] Expected tts_mic_guard_violations=0 in result.json, got: $json"
-            )
-            // Log translation/TTS evidence (informational, not required for pass)
+            // Log translation evidence (informational, not required for pass)
             if (payload.optBoolean("expects_translation", false)) {
                 val translatedText = payload.optString("translated_text", "").trim()
                 if (translatedText.isEmpty()) {
                     Log.w(TAG, "[$modelId] WARNING: translation enabled but translated_text is empty")
                 } else {
                     Log.i(TAG, "[$modelId] Translation evidence: ${translatedText.take(80)}...")
-                }
-            }
-            if (payload.optBoolean("expects_tts_evidence", false)) {
-                val ttsPath = payload.optString("tts_audio_path", "").trim()
-                if (ttsPath.isEmpty()) {
-                    Log.w(TAG, "[$modelId] WARNING: TTS enabled but tts_audio_path is empty")
-                } else {
-                    Log.i(TAG, "[$modelId] TTS evidence: $ttsPath")
                 }
             }
         } else {

@@ -70,7 +70,7 @@ class MainActivity : ComponentActivity() {
                             isLoading = false
 
                             delay(500)
-                            // Prefer adb-pushed file (E2E scripts), fall back to bundled asset
+                            // Prefer adb-pushed fixture, fall back to bundled asset
                             val adbFile = java.io.File("/data/local/tmp/test_speech.wav")
                             val wavPath = if (adbFile.exists()) {
                                 adbFile.absolutePath
@@ -90,10 +90,12 @@ class MainActivity : ComponentActivity() {
                                 modelId = e2eModelId,
                                 error = "model not found"
                             )
+                            app.whisperEngine.syncSelectedModelFromPreferences()
                             app.whisperEngine.loadModelIfAvailable()
                             isLoading = false
                         }
                     } else {
+                        app.whisperEngine.syncSelectedModelFromPreferences()
                         app.whisperEngine.loadModelIfAvailable()
                         isLoading = false
                     }

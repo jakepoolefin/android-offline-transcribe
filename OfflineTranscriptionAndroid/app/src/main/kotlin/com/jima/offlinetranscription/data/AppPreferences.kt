@@ -18,10 +18,8 @@ class AppPreferences(private val context: Context) {
         private val USE_VAD = booleanPreferencesKey("use_vad")
         private val ENABLE_TIMESTAMPS = booleanPreferencesKey("enable_timestamps")
         private val TRANSLATION_ENABLED = booleanPreferencesKey("translation_enabled")
-        private val SPEAK_TRANSLATED_AUDIO = booleanPreferencesKey("speak_translated_audio")
         private val TRANSLATION_SOURCE_LANGUAGE = stringPreferencesKey("translation_source_language")
         private val TRANSLATION_TARGET_LANGUAGE = stringPreferencesKey("translation_target_language")
-        private val TTS_RATE = stringPreferencesKey("tts_rate")
     }
 
     val selectedModelId: Flow<String?> = context.dataStore.data.map { it[SELECTED_MODEL_ID] }
@@ -29,12 +27,8 @@ class AppPreferences(private val context: Context) {
     val useVAD: Flow<Boolean> = context.dataStore.data.map { it[USE_VAD] ?: true }
     val enableTimestamps: Flow<Boolean> = context.dataStore.data.map { it[ENABLE_TIMESTAMPS] ?: true }
     val translationEnabled: Flow<Boolean> = context.dataStore.data.map { it[TRANSLATION_ENABLED] ?: false }
-    val speakTranslatedAudio: Flow<Boolean> = context.dataStore.data.map { it[SPEAK_TRANSLATED_AUDIO] ?: false }
     val translationSourceLanguage: Flow<String> = context.dataStore.data.map { it[TRANSLATION_SOURCE_LANGUAGE] ?: "en" }
     val translationTargetLanguage: Flow<String> = context.dataStore.data.map { it[TRANSLATION_TARGET_LANGUAGE] ?: "ja" }
-    val ttsRate: Flow<Float> = context.dataStore.data.map { prefs ->
-        prefs[TTS_RATE]?.toFloatOrNull() ?: 1.0f
-    }
 
     suspend fun setSelectedModelId(id: String) {
         context.dataStore.edit { it[SELECTED_MODEL_ID] = id }
@@ -56,19 +50,11 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { it[TRANSLATION_ENABLED] = enabled }
     }
 
-    suspend fun setSpeakTranslatedAudio(enabled: Boolean) {
-        context.dataStore.edit { it[SPEAK_TRANSLATED_AUDIO] = enabled }
-    }
-
     suspend fun setTranslationSourceLanguage(languageCode: String) {
         context.dataStore.edit { it[TRANSLATION_SOURCE_LANGUAGE] = languageCode }
     }
 
     suspend fun setTranslationTargetLanguage(languageCode: String) {
         context.dataStore.edit { it[TRANSLATION_TARGET_LANGUAGE] = languageCode }
-    }
-
-    suspend fun setTtsRate(rate: Float) {
-        context.dataStore.edit { it[TTS_RATE] = rate.toString() }
     }
 }

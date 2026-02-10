@@ -90,11 +90,10 @@ class AppErrorTest {
             AppError.TranscriptionFailed(RuntimeException("test")),
             AppError.TranslationUnavailable(),
             AppError.TranslationFailed(RuntimeException("test")),
-            AppError.TtsFailed(RuntimeException("test")),
             AppError.NoModelSelected(),
             AppError.ModelNotReady()
         )
-        assertEquals(9, errors.size)
+        assertEquals(8, errors.size)
     }
 
     @Test
@@ -106,7 +105,6 @@ class AppErrorTest {
             AppError.TranscriptionFailed(RuntimeException("test")),
             AppError.TranslationUnavailable(),
             AppError.TranslationFailed(RuntimeException("test")),
-            AppError.TtsFailed(RuntimeException("test")),
             AppError.NoModelSelected(),
             AppError.ModelNotReady()
         )

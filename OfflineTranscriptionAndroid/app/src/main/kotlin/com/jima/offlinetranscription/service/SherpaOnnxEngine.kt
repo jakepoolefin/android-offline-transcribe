@@ -38,15 +38,31 @@ class SherpaOnnxEngine(
         release()
         return withContext(Dispatchers.IO) {
             lock.withLock {
+                val providers = preferredProviders()
+                val threads = computeOfflineThreads()
+                var lastError: Throwable? = null
                 try {
-                    val config = buildConfig(modelPath)
-                    recognizer = OfflineRecognizer(config = config)
-                    true
-                } catch (e: Throwable) {
-                    Log.e(TAG, "Failed to load sherpa model from $modelPath", e)
-                    recognizer = null
-                    false
+                    for (provider in providers) {
+                        try {
+                            val config = buildConfig(
+                                modelDir = modelPath,
+                                threads = threads,
+                                provider = provider
+                            )
+                            recognizer = OfflineRecognizer(config = config)
+                            Log.i(TAG, "Loaded sherpa model with provider=$provider threads=$threads")
+                            return@withContext true
+                        } catch (e: Throwable) {
+                            lastError = e
+                            Log.w(TAG, "Failed to initialize provider=$provider, trying fallback", e)
+                        }
+                    }
+                } catch (outer: Throwable) {
+                    lastError = outer
                 }
+                Log.e(TAG, "Failed to load sherpa model from $modelPath", lastError)
+                recognizer = null
+                false
             }
         }
     }
@@ -60,40 +76,86 @@ class SherpaOnnxEngine(
             lock.withLock {
                 val rec = recognizer ?: return@withContext emptyList()
                 try {
-                    val stream = rec.createStream()
-                    val result = try {
-                        stream.acceptWaveform(audioSamples, sampleRate = 16000)
-                        rec.decode(stream)
-                        rec.getResult(stream)
-                    } finally {
-                        stream.release()
-                    }
+                    val audioDurationSec = audioSamples.size / 16000f
+                    val isLongOmnilingual =
+                        modelType == SherpaModelType.OMNILINGUAL_CTC && audioSamples.size > 16000 * 8
+                    val decodeStartNs = System.nanoTime()
 
-                    var text = result.text.trim()
-                    var timestamps: FloatArray? = result.timestamps
-                    val lang = result.lang.takeIf { it.isNotBlank() }
+                    var text = ""
+                    var timestamps: FloatArray? = null
+                    var lang: String? = null
 
-                    if (text.isBlank() && modelType == SherpaModelType.OMNILINGUAL_CTC) {
-                        // Some omnilingual CTC builds are sensitive to waveform scale.
-                        // Retry full decode with int16-like scaling before chunked fallback.
-                        val scaled = FloatArray(audioSamples.size) { i -> audioSamples[i] * 32768f }
+                    if (isLongOmnilingual) {
+                        // Mobile safeguard: long omnilingual clips can stall on full-clip decode.
+                        // Use bounded chunked decode directly to keep runtime predictable.
+                        Log.i(
+                            TAG,
+                            "Omnilingual long decode (${String.format("%.1f", audioDurationSec)}s) -> chunked path"
+                        )
+                        text = decodeOmnilingualChunked(rec, audioSamples)
+                    } else {
                         val stream = rec.createStream()
-                        try {
-                            stream.acceptWaveform(scaled, sampleRate = 16000)
+                        val result = try {
+                            stream.acceptWaveform(audioSamples, sampleRate = 16000)
                             rec.decode(stream)
-                            text = rec.getResult(stream).text.trim()
-                        } catch (e: Throwable) {
-                            Log.w(TAG, "Omnilingual full decode retry with scaled waveform failed", e)
+                            rec.getResult(stream)
                         } finally {
                             stream.release()
                         }
+
+                        text = result.text.trim()
+                        timestamps = result.timestamps
+                        lang = result.lang.takeIf { it.isNotBlank() }
+                        var bestScore = if (text.isBlank()) Int.MIN_VALUE else scoreOmnilingualText(text)
+
+                        if (modelType == SherpaModelType.OMNILINGUAL_CTC && bestScore < 40) {
+                            // Some omnilingual CTC builds are sensitive to waveform scale.
+                            val scaled = FloatArray(audioSamples.size) { i -> audioSamples[i] * 32768f }
+                            val scaledStream = rec.createStream()
+                            try {
+                                scaledStream.acceptWaveform(scaled, sampleRate = 16000)
+                                rec.decode(scaledStream)
+                                val scaledResult = rec.getResult(scaledStream)
+                                val scaledText = scaledResult.text.trim()
+                                val scaledScore = if (scaledText.isBlank()) Int.MIN_VALUE else scoreOmnilingualText(scaledText)
+                                if (scaledScore > bestScore) {
+                                    text = scaledText
+                                    timestamps = scaledResult.timestamps
+                                    lang = scaledResult.lang.takeIf { it.isNotBlank() }
+                                    bestScore = scaledScore
+                                }
+                            } catch (e: Throwable) {
+                                Log.w(TAG, "Omnilingual scaled full decode retry failed", e)
+                            } finally {
+                                scaledStream.release()
+                            }
+                        }
+
+                        if (text.isBlank() && modelType == SherpaModelType.OMNILINGUAL_CTC) {
+                            val shouldRunChunkedFallback = audioSamples.size > 16000 * 10
+                            if (!shouldRunChunkedFallback) {
+                                Log.i(
+                                    TAG,
+                                    "Skipping omnilingual chunked fallback for short slice (${String.format("%.1f", audioDurationSec)}s)"
+                                )
+                            }
+                        }
+
+                        if (
+                            text.isBlank() &&
+                            modelType == SherpaModelType.OMNILINGUAL_CTC &&
+                            audioSamples.size > 16000 * 10
+                        ) {
+                            text = decodeOmnilingualChunked(rec, audioSamples)
+                            timestamps = null
+                        }
                     }
 
-                    if (text.isBlank() && modelType == SherpaModelType.OMNILINGUAL_CTC) {
-                        text = decodeOmnilingualChunked(rec, audioSamples)
-                        timestamps = null
-                    }
-
+                    val decodeElapsedSec = (System.nanoTime() - decodeStartNs) / 1_000_000_000.0
+                    Log.i(
+                        TAG,
+                        "Decode done modelType=$modelType dur=${String.format("%.1f", audioDurationSec)}s elapsed=${String.format("%.2f", decodeElapsedSec)}s textLen=${text.length}"
+                    )
                     if (text.isBlank()) return@withContext emptyList()
                     buildSegments(text, timestamps, lang)
                 } catch (e: Throwable) {
@@ -111,9 +173,8 @@ class SherpaOnnxEngine(
         }
     }
 
-    private fun buildConfig(modelDir: String): OfflineRecognizerConfig {
+    private fun buildConfig(modelDir: String, threads: Int, provider: String): OfflineRecognizerConfig {
         val tokensPath = File(modelDir, "tokens.txt").absolutePath
-        val threads = Runtime.getRuntime().availableProcessors().coerceAtMost(4)
 
         val modelConfig = when (modelType) {
             SherpaModelType.MOONSHINE -> OfflineModelConfig(
@@ -126,7 +187,7 @@ class SherpaOnnxEngine(
                 tokens = tokensPath,
                 numThreads = threads,
                 debug = false,
-                provider = "cpu",
+                provider = provider,
             )
             SherpaModelType.ZIPFORMER_TRANSDUCER -> throw IllegalArgumentException(
                 "ZIPFORMER_TRANSDUCER should use SherpaOnnxStreamingEngine, not SherpaOnnxEngine"
@@ -140,7 +201,7 @@ class SherpaOnnxEngine(
                 tokens = tokensPath,
                 numThreads = threads,
                 debug = false,
-                provider = "cpu",
+                provider = provider,
             )
             SherpaModelType.OMNILINGUAL_CTC -> OfflineModelConfig(
                 omnilingual = OfflineOmnilingualAsrCtcModelConfig(
@@ -149,7 +210,7 @@ class SherpaOnnxEngine(
                 tokens = tokensPath,
                 numThreads = threads,
                 debug = false,
-                provider = "cpu",
+                provider = provider,
             )
         }
 
@@ -158,6 +219,20 @@ class SherpaOnnxEngine(
             modelConfig = modelConfig,
             decodingMethod = "greedy_search",
         )
+    }
+
+    private fun computeOfflineThreads(): Int {
+        if (modelType == SherpaModelType.OMNILINGUAL_CTC) {
+            // Keep omnilingual decode on one thread on mobile to avoid UI starvation/ANR.
+            return 1
+        }
+        val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        return if (cores <= 2) 1 else 2
+    }
+
+    private fun preferredProviders(): List<String> {
+        // Keep sherpa-onnx offline on CPU by default for predictable thermal/latency behavior.
+        return listOf("cpu")
     }
 
     /** Find the int8 version of a model file, falling back to the non-quantized version. */
@@ -191,10 +266,16 @@ class SherpaOnnxEngine(
      * On mobile runtimes this model can collapse to blank output beyond ~8s windows.
      */
     private fun decodeOmnilingualChunked(rec: OfflineRecognizer, samples: FloatArray): String {
-        fun runPass(input: FloatArray, chunkSize: Int, overlap: Int): List<String> {
+        val deadlineNs = System.nanoTime() + 45_000_000_000L
+
+        fun runPass(input: FloatArray, chunkSize: Int, overlap: Int): String {
             val out = mutableListOf<String>()
             var offset = 0
             while (offset < input.size) {
+                if (System.nanoTime() >= deadlineNs) {
+                    Log.w(TAG, "Omnilingual chunk decode timeout; returning partial result")
+                    break
+                }
                 val end = (offset + chunkSize).coerceAtMost(input.size)
                 val chunk = input.copyOfRange(offset, end)
                 val stream = rec.createStream()
@@ -220,33 +301,25 @@ class SherpaOnnxEngine(
                 if (end == input.size) break
                 offset = maxOf(end - overlap, offset + 1)
             }
-            return out
+            return out.joinToString(" ").trim()
         }
 
         val raw = samples
         val scaled = FloatArray(samples.size) { i -> samples[i] * 32768f }
-        val rawBoost = FloatArray(samples.size) { i -> (samples[i] * 2.5f).coerceIn(-1f, 1f) }
-        val scaledBoost = FloatArray(samples.size) { i -> scaled[i] * 2.5f }
-        val candidates = listOf(raw, scaled, rawBoost, scaledBoost)
-        val chunkShapes = listOf(
-            Pair(16000 * 4, 16000 / 2),
-            Pair(16000 * 5, 16000 / 2),
-            Pair(16000 * 6, 16000),
-        )
+        val candidates = listOf(raw, scaled)
+        val chunkSize = 16000 * 4
+        val overlap = 16000 / 2
         var bestText = ""
         var bestScore = Int.MIN_VALUE
 
         for (candidate in candidates) {
-            for ((chunkSize, overlap) in chunkShapes) {
-                val pieces = runPass(candidate, chunkSize, overlap)
-                if (pieces.isEmpty()) continue
-                val joined = pieces.joinToString(" ").trim()
-                if (joined.isBlank()) continue
-                val score = scoreOmnilingualText(joined)
-                if (score > bestScore) {
-                    bestScore = score
-                    bestText = joined
-                }
+            if (System.nanoTime() >= deadlineNs) break
+            val decoded = runPass(candidate, chunkSize = chunkSize, overlap = overlap)
+            if (decoded.isBlank()) continue
+            val score = scoreOmnilingualText(decoded)
+            if (score > bestScore) {
+                bestScore = score
+                bestText = decoded
             }
         }
 
@@ -260,8 +333,8 @@ class SherpaOnnxEngine(
         keywords.forEach { keyword ->
             if (lower.contains(keyword)) score += 120
         }
-        score += text.count { it.isLetter() && it.code < 128 }
-        score -= text.count { it.isLetter() && it.code > 127 } * 2
+        score += text.count { it.isLetterOrDigit() }
+        score -= text.count { it == '\uFFFD' } * 8
         return score
     }
 }

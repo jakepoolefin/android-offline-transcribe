@@ -12,9 +12,12 @@ sealed class AppError(val message: String) {
         "Native on-device translation is unavailable on this Android version/device."
     )
     class TranslationFailed(cause: Throwable) : AppError("Translation failed: ${cause.localizedMessage}")
-    class TtsFailed(cause: Throwable) : AppError("Text-to-speech failed: ${cause.localizedMessage}")
     class NoModelSelected : AppError("No transcription model selected.")
     class ModelNotReady : AppError("The transcription model is not ready yet.")
     class InsufficientStorage(needed: String, available: String) :
         AppError("Not enough storage to download model (need $needed, have $available available).")
+    class NetworkUnavailable :
+        AppError(
+            "No internet connection detected. Disable Airplane mode and connect Wi-Fi or mobile data, then retry."
+        )
 }

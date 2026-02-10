@@ -2,6 +2,7 @@ package com.voiceping.offlinetranscription.ui.transcription
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -73,12 +74,17 @@ import com.voiceping.offlinetranscription.util.FormatUtils
 @Composable
 fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> Unit = {}) {
     val context = LocalContext.current
+    var pendingPermissionStart by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) {
-            viewModel.toggleRecording()
+        if (granted && pendingPermissionStart) {
+            pendingPermissionStart = false
+            viewModel.startRecordingWithPreparation()
+        } else {
+            pendingPermissionStart = false
+            Log.i("TranscriptionScreen", "Permission result ignored (granted=$granted)")
         }
     }
 
@@ -87,9 +93,14 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
             context, Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
 
-        if (hasPermission || viewModel.isRecording.value) {
+        if (viewModel.isRecording.value) {
+            pendingPermissionStart = false
             viewModel.toggleRecording()
+        } else if (hasPermission) {
+            pendingPermissionStart = false
+            viewModel.startRecordingWithPreparation()
         } else {
+            pendingPermissionStart = true
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
@@ -132,6 +143,11 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
         if (isRecording || displayConfirmedText.isNotEmpty() || displayHypothesisText.isNotEmpty()) {
             scrollState.scrollTo(scrollState.maxValue)
         }
+    }
+
+    // Pre-initialize mic recorder setup on screen entry to avoid first-utterance clipping.
+    LaunchedEffect(Unit) {
+        viewModel.prewarmOnScreenOpen()
     }
 
     Scaffold(
@@ -616,19 +632,7 @@ private fun E2EEvidenceOverlay(result: E2ETestResult) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = "TTS starts: ${result.ttsStartCount}",
-            style = MaterialTheme.typography.labelSmall,
-            fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = "TTS mic guard violations: ${result.ttsMicGuardViolations}",
-            style = MaterialTheme.typography.labelSmall,
-            fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = "Mic stopped for TTS: ${result.micStoppedForTts}",
+            text = "Token/sec: ${"%.1f".format(result.tokensPerSecond)}",
             style = MaterialTheme.typography.labelSmall,
             fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onSurfaceVariant
