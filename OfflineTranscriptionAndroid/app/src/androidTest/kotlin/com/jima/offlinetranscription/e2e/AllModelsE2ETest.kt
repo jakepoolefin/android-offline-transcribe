@@ -35,7 +35,7 @@ class AllModelsE2ETest {
     // Per-model download+load+transcribe timeout (ms)
     // whisper.cpp on emulator is very slow — whisper-small needs ~500s, large-turbo ~1800s
     private fun timeout(modelId: String): Long = when {
-        modelId.contains("large") -> 1_800_000L
+        modelId.contains("large") -> 3_600_000L  // 60 min — 809M model on older phones
         modelId.contains("omnilingual") -> 600_000L
         modelId.contains("zipformer") -> 300_000L
         modelId.contains("small") -> 1_200_000L

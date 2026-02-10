@@ -175,6 +175,8 @@ for MODEL_ID in "${MODELS[@]}"; do
     RESULT=$(run_instrumentation_with_timeout "$METHOD" "$MODEL_TIMEOUT_SEC")
     INSTRUMENT_EXIT=$?
     set -e
+    printf "%s\n" "$RESULT" > "$MODEL_DIR/instrumentation.log"
+    adb_cmd logcat -d > "$MODEL_DIR/logcat.txt" 2>/dev/null || true
 
     if echo "$RESULT" | grep -q "OK (1 test)"; then
         echo "  Test passed"

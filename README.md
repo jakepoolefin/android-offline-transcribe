@@ -34,6 +34,30 @@ Record speech from the microphone and transcribe it locally using multiple ASR e
 | Omnilingual 300M | sherpa-onnx | ~365 MB | 300M | 1,600+ languages |
 | Zipformer Streaming | sherpa-onnx | ~46 MB | 20M | English |
 
+### Benchmarks (Samsung Galaxy S10, Exynos 9820, 30s English audio)
+
+| Model | Status | tok/s | Time (30s audio) | RTF | Notes |
+|-------|--------|-------|------------------|-----|-------|
+| Moonshine Tiny | PASS | 39.6 | 1.5s | 0.05 | Fastest. English only. |
+| SenseVoice Small | PASS | 30.9 | 1.9s | 0.06 | Best punctuation + multilingual (zh/en/ja/ko/yue). |
+| Moonshine Base | PASS | 23.8 | 2.4s | 0.08 | Excellent accuracy. English only. |
+| Zipformer Streaming | PASS | 16.2 | 3.6s | 0.12 | Real-time streaming with endpoint detection. |
+| Whisper Tiny | PASS | 1.2 | 48s | 1.6 | Full transcript, no punctuation. |
+| Whisper Base | PASS | 0.5 | 111s | 3.7 | Multilingual, good accuracy. |
+| Whisper Base (.en) | PASS | 0.5 | 109s | 3.6 | English-only, adds punctuation. |
+| Whisper Small | PASS | 0.07 | 13 min | 26.4 | Best Whisper quality with full punctuation. Slow on older devices. |
+| Whisper Large V3 Turbo | TIMEOUT | — | >30 min | >60 | 809M params too heavy for mid-range phones. Works on flagship devices. |
+| Whisper Large V3 Turbo (q8_0) | TIMEOUT | — | >30 min | >60 | Same model file as above (q8_0 quantized). |
+| Omnilingual 300M | FAIL | 0.04 | 47s | 1.6 | Outputs non-English text for English audio. Known model limitation (1,600-language CTC model has low per-language accuracy). Works better with non-English audio. |
+
+**RTF** = Real-Time Factor (processing time / audio duration). RTF < 1.0 means faster than real-time.
+
+**Recommended models:**
+- **Best speed:** Moonshine Tiny (39.6 tok/s, 1.5s for 30s audio)
+- **Best multilingual:** SenseVoice Small (30.9 tok/s, supports zh/en/ja/ko/yue with punctuation)
+- **Best streaming:** Zipformer (16.2 tok/s, real-time endpoint detection)
+- **Best accuracy:** Whisper Small (full punctuation, 99 languages, but 13 min on mid-range phones)
+
 ## Architecture
 
 ```
@@ -117,6 +141,70 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
 cd OfflineTranscriptionAndroid
 JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
   ./gradlew testDebugUnitTest
+```
+
+## Flow Validation (Screenshots + Logs)
+
+Use this when you need reproducible E2E evidence for model selection, regressions, or release checks.
+
+### 1) Run model E2E with explicit evidence output
+
+```bash
+ANDROID_SERIAL=<device-serial> \
+EVIDENCE_DIR=artifacts/e2e/android/verify-$(date +%Y%m%d-%H%M%S) \
+scripts/android-e2e-test.sh moonshine-tiny sensevoice-small whisper-small
+```
+
+### 2) Validate screen capture artifacts
+
+Each model directory should include:
+
+- `01_model_selected.png`
+- `02_model_loaded.png`
+- `03_inference_result.png`
+
+Quick check:
+
+```bash
+find artifacts/e2e/android/verify-* -maxdepth 2 -name '*.png' | wc -l
+```
+
+### 3) Validate machine-readable result output
+
+```bash
+find artifacts/e2e/android/verify-* -maxdepth 2 -name result.json -print
+```
+
+Inspect pass/fail + transcript preview:
+
+```bash
+python3 - <<'PY'
+import json,glob
+for p in sorted(glob.glob("artifacts/e2e/android/verify-*/**/result.json", recursive=True)):
+    r=json.load(open(p))
+    print(p, "PASS" if r.get("pass") else "FAIL", str(r.get("duration_ms",0))+"ms", (r.get("transcript","")[:80]))
+PY
+```
+
+### 4) Validate logs (instrumentation + device runtime)
+
+Per model, the E2E script now stores:
+
+- `instrumentation.log`: `am instrument` output
+- `logcat.txt`: scoped runtime logs captured after each model test
+
+Extract key lines:
+
+```bash
+rg -n "OK \\(1 test\\)|FAILURES|TIMEOUT|E2E_RESULT" artifacts/e2e/android/verify-*/**/instrumentation.log
+rg -n "WhisperEngine|SherpaOnnxEngine|transcribeFile|E2E|ERROR" artifacts/e2e/android/verify-*/**/logcat.txt
+```
+
+### 5) Optional: user-flow UI validation (10 UiAutomator flows)
+
+```bash
+EVIDENCE_DIR=artifacts/e2e/android/userflow/verify-$(date +%Y%m%d-%H%M%S) \
+scripts/android-userflow-test.sh
 ```
 
 ## Tech Stack
