@@ -92,7 +92,7 @@ class SherpaOnnxEngine(
                             TAG,
                             "Omnilingual long decode (${String.format("%.1f", audioDurationSec)}s) -> chunked path"
                         )
-                        text = decodeOmnilingualChunked(rec, audioSamples)
+                        text = decodeOmnilingualChunked(rec, audioSamples, languageHint = language)
                     } else {
                         val stream = rec.createStream()
                         val result = try {
@@ -106,7 +106,10 @@ class SherpaOnnxEngine(
                         text = result.text.trim()
                         timestamps = result.timestamps
                         lang = result.lang.takeIf { it.isNotBlank() }
-                        var bestScore = if (text.isBlank()) Int.MIN_VALUE else scoreOmnilingualText(text)
+                        var bestScore = if (text.isBlank()) Int.MIN_VALUE else scoreOmnilingualText(
+                            text,
+                            languageHint = language
+                        )
 
                         if (modelType == SherpaModelType.OMNILINGUAL_CTC && bestScore < 40) {
                             // Some omnilingual CTC builds are sensitive to waveform scale.
@@ -117,7 +120,10 @@ class SherpaOnnxEngine(
                                 rec.decode(scaledStream)
                                 val scaledResult = rec.getResult(scaledStream)
                                 val scaledText = scaledResult.text.trim()
-                                val scaledScore = if (scaledText.isBlank()) Int.MIN_VALUE else scoreOmnilingualText(scaledText)
+                                val scaledScore = if (scaledText.isBlank()) Int.MIN_VALUE else scoreOmnilingualText(
+                                    scaledText,
+                                    languageHint = language
+                                )
                                 if (scaledScore > bestScore) {
                                     text = scaledText
                                     timestamps = scaledResult.timestamps
@@ -132,21 +138,7 @@ class SherpaOnnxEngine(
                         }
 
                         if (text.isBlank() && modelType == SherpaModelType.OMNILINGUAL_CTC) {
-                            val shouldRunChunkedFallback = audioSamples.size > 16000 * 10
-                            if (!shouldRunChunkedFallback) {
-                                Log.i(
-                                    TAG,
-                                    "Skipping omnilingual chunked fallback for short slice (${String.format("%.1f", audioDurationSec)}s)"
-                                )
-                            }
-                        }
-
-                        if (
-                            text.isBlank() &&
-                            modelType == SherpaModelType.OMNILINGUAL_CTC &&
-                            audioSamples.size > 16000 * 10
-                        ) {
-                            text = decodeOmnilingualChunked(rec, audioSamples)
+                            text = decodeOmnilingualChunked(rec, audioSamples, languageHint = language)
                             timestamps = null
                         }
                     }
@@ -222,12 +214,12 @@ class SherpaOnnxEngine(
     }
 
     private fun computeOfflineThreads(): Int {
-        if (modelType == SherpaModelType.OMNILINGUAL_CTC) {
-            // Keep omnilingual decode on one thread on mobile to avoid UI starvation/ANR.
-            return 1
-        }
         val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-        return if (cores <= 2) 1 else 2
+        return when {
+            cores <= 2 -> 1
+            cores <= 4 -> 2
+            else -> 4
+        }
     }
 
     private fun preferredProviders(): List<String> {
@@ -265,7 +257,11 @@ class SherpaOnnxEngine(
      * Fallback for Omnilingual CTC: decode in shorter chunks when full-clip decode returns empty.
      * On mobile runtimes this model can collapse to blank output beyond ~8s windows.
      */
-    private fun decodeOmnilingualChunked(rec: OfflineRecognizer, samples: FloatArray): String {
+    private fun decodeOmnilingualChunked(
+        rec: OfflineRecognizer,
+        samples: FloatArray,
+        languageHint: String = "auto"
+    ): String {
         val deadlineNs = System.nanoTime() + 45_000_000_000L
 
         fun runPass(input: FloatArray, chunkSize: Int, overlap: Int): String {
@@ -307,34 +303,58 @@ class SherpaOnnxEngine(
         val raw = samples
         val scaled = FloatArray(samples.size) { i -> samples[i] * 32768f }
         val candidates = listOf(raw, scaled)
-        val chunkSize = 16000 * 4
-        val overlap = 16000 / 2
+        val chunkShapes = listOf(
+            Pair(16000 * 4, 16000 / 2),
+            Pair(16000 * 8, 16000),
+            Pair(16000 * 12, 16000 * 3 / 2),
+        )
         var bestText = ""
         var bestScore = Int.MIN_VALUE
 
-        for (candidate in candidates) {
+        for ((candidateIndex, candidate) in candidates.withIndex()) {
             if (System.nanoTime() >= deadlineNs) break
-            val decoded = runPass(candidate, chunkSize = chunkSize, overlap = overlap)
-            if (decoded.isBlank()) continue
-            val score = scoreOmnilingualText(decoded)
-            if (score > bestScore) {
-                bestScore = score
-                bestText = decoded
+            for ((chunkSize, overlap) in chunkShapes) {
+                if (System.nanoTime() >= deadlineNs) break
+                val decoded = runPass(candidate, chunkSize = chunkSize, overlap = overlap)
+                if (decoded.isBlank()) continue
+                val score = scoreOmnilingualText(decoded, languageHint = languageHint)
+                Log.i(
+                    TAG,
+                    "Omnilingual chunk candidate=${if (candidateIndex == 0) "raw" else "scaled"} " +
+                        "chunk=${chunkSize / 16000.0f}s score=$score text='${decoded.take(120)}'"
+                )
+                if (score > bestScore) {
+                    bestScore = score
+                    bestText = decoded
+                }
             }
         }
 
+        if (bestText.isBlank()) {
+            Log.w(TAG, "Omnilingual chunked fallback produced empty output")
+        } else {
+            Log.i(TAG, "Omnilingual chunked fallback selected score=$bestScore text='${bestText.take(160)}'")
+        }
         return bestText
     }
 
-    private fun scoreOmnilingualText(text: String): Int {
+    private fun scoreOmnilingualText(text: String, languageHint: String = "auto"): Int {
         val lower = text.lowercase()
+        val normalizedHint = languageHint.trim().lowercase()
         var score = 0
         val keywords = listOf("country", "ask", "do for", "fellow", "americans")
         keywords.forEach { keyword ->
             if (lower.contains(keyword)) score += 120
         }
-        score += text.count { it.isLetterOrDigit() }
+        val asciiLetters = text.count { it.isLetter() && it.code < 128 }
+        val nonAsciiLetters = text.count { it.isLetter() && it.code >= 128 }
+        score += asciiLetters
+        // For English-hint decode, strongly discourage non-Latin output.
+        score -= if (normalizedHint.startsWith("en")) nonAsciiLetters * 3 else nonAsciiLetters * 2
         score -= text.count { it == '\uFFFD' } * 8
+        if (normalizedHint.startsWith("en") && asciiLetters == 0) {
+            score -= 300
+        }
         return score
     }
 }

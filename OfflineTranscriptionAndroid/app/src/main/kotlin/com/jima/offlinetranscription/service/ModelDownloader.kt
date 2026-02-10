@@ -38,6 +38,7 @@ class ModelDownloader(private val modelsDir: File) {
     fun download(model: ModelInfo): Flow<Float> = flow {
         val dir = modelDir(model)
         dir.mkdirs()
+        pruneStaleModelFiles(dir, model)
 
         val totalFiles = model.files.size
         for ((fileIndex, modelFile) in model.files.withIndex()) {
@@ -105,4 +106,30 @@ class ModelDownloader(private val modelsDir: File) {
         }
         emit(1.0f)
     }.flowOn(Dispatchers.IO)
+
+    /**
+     * Remove stale artifacts from previous model revisions in the same model ID directory.
+     * This prevents mixing incompatible ONNX file sets (e.g. old and new Zipformer variants).
+     */
+    private fun pruneStaleModelFiles(dir: File, model: ModelInfo) {
+        val expected = model.files.map { it.localName }.toSet()
+        dir.listFiles()?.forEach { file ->
+            if (!file.isFile) return@forEach
+
+            val name = file.name
+            val baseName = if (name.endsWith(".tmp")) name.removeSuffix(".tmp") else name
+            val isExpected = expected.contains(baseName)
+            if (isExpected) return@forEach
+
+            val removable =
+                name.endsWith(".onnx") ||
+                    name.endsWith(".txt") ||
+                    name.endsWith(".model") ||
+                    name.endsWith(".bin") ||
+                    name.endsWith(".tmp")
+            if (removable) {
+                file.delete()
+            }
+        }
+    }
 }

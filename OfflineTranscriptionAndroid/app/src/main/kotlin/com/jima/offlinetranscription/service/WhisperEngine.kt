@@ -173,12 +173,12 @@ class WhisperEngine(
         private const val DEFAULT_MIN_NEW_AUDIO_SECONDS = 0.45f
         private const val DEFAULT_OFFLINE_REALTIME_CHUNK_SECONDS = 2.8f
         private const val DEFAULT_INITIAL_MIN_NEW_AUDIO_SECONDS = 0.20f
-        // sherpa-onnx offline models (SenseVoice, Moonshine, Omnilingual) are
-        // more prone to silence hallucinations on short/quiet slices.
-        // Use larger chunks and slower cadence to match iOS behavior.
-        private const val SHERPA_OFFLINE_REALTIME_CHUNK_SECONDS = 8.0f
-        private const val SHERPA_INITIAL_MIN_NEW_AUDIO_SECONDS = 2.0f
-        private const val SHERPA_MIN_NEW_AUDIO_SECONDS = 2.0f
+        // sherpa-onnx offline models (SenseVoice, Moonshine): fast cadence with
+        // CPU-aware delay. Smaller 3.5s chunks keep each inference quick (~0.2s),
+        // and the duty-cycle guard prevents CPU starvation. Matches iOS timing.
+        private const val SHERPA_OFFLINE_REALTIME_CHUNK_SECONDS = 3.5f
+        private const val SHERPA_INITIAL_MIN_NEW_AUDIO_SECONDS = 0.35f
+        private const val SHERPA_MIN_NEW_AUDIO_SECONDS = 0.7f
         // Omnilingual CTC is significantly heavier than other sherpa offline models.
         // Keep realtime decode windows smaller and cadence slower to avoid UI starvation.
         private const val OMNILINGUAL_REALTIME_CHUNK_SECONDS = 4.0f
@@ -187,8 +187,8 @@ class WhisperEngine(
         private const val SHERPA_MIN_INFERENCE_RMS = 0.012f
         private const val INITIAL_VAD_BYPASS_SECONDS = 1.0f
         private const val INFERENCE_PREWARM_AUDIO_SECONDS = 0.5f
-        private const val TARGET_INFERENCE_DUTY_CYCLE = 0.32f
-        private const val MAX_CPU_PROTECT_DELAY_SECONDS = 1.1f
+        private const val TARGET_INFERENCE_DUTY_CYCLE = 0.24f
+        private const val MAX_CPU_PROTECT_DELAY_SECONDS = 1.6f
         private const val INFERENCE_EMA_ALPHA = 0.20
         private const val DIAGNOSTIC_LOG_INTERVAL = 5L
         // Emulator host-mic levels are often lower than physical devices.
@@ -1091,23 +1091,10 @@ class WhisperEngine(
     private fun adaptiveRealtimeDelayForModel(): Float {
         if (!isSherpaOfflineModel()) return chunkManager.adaptiveDelay()
         if (isOmnilingualModel()) {
-            val chunkElapsedSeconds =
-                lastBufferSize.toFloat() / AudioRecorder.SAMPLE_RATE -
-                    chunkManager.lastConfirmedSegmentEndMs.toFloat() / 1000f
-            return when {
-                chunkElapsedSeconds > 3f -> 6.0f
-                else -> 4.0f
-            }
+            return OMNILINGUAL_MIN_NEW_AUDIO_SECONDS
         }
-
-        val chunkElapsedSeconds =
-            lastBufferSize.toFloat() / AudioRecorder.SAMPLE_RATE -
-                chunkManager.lastConfirmedSegmentEndMs.toFloat() / 1000f
-        return when {
-            chunkElapsedSeconds > 5f -> 4.0f
-            chunkElapsedSeconds > 2f -> 3.0f
-            else -> SHERPA_MIN_NEW_AUDIO_SECONDS
-        }
+        // SenseVoice/Moonshine: use base delay (CPU-aware delay applied by caller)
+        return SHERPA_MIN_NEW_AUDIO_SECONDS
     }
 
     private fun computeRms(samples: FloatArray): Float {
@@ -1328,8 +1315,13 @@ class WhisperEngine(
                 isHeavyWhisperModel(model)
         val hasKeywordHit = keywords.any { lowerTranscript.contains(it) }
         val hasMeaningfulText = transcript.any { it.isLetterOrDigit() }
+        val asciiLetters = transcript.count { it.isLetter() && it.code < 128 }
+        val nonAsciiLetters = transcript.count { it.isLetter() && it.code >= 128 }
+        val omnilingualLooksEnglish =
+            asciiLetters >= 8 &&
+                asciiLetters >= nonAsciiLetters
         val transcriptPass = when {
-            isOmnilingual -> hasMeaningfulText
+            isOmnilingual -> hasMeaningfulText && omnilingualLooksEnglish
             isHeavyWhisperOnEmulator -> hasMeaningfulText
             else -> hasKeywordHit
         }

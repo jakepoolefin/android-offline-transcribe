@@ -70,14 +70,16 @@ class MainActivity : ComponentActivity() {
                             isLoading = false
 
                             delay(500)
-                            // Prefer adb-pushed fixture, fall back to bundled asset
+                            // Prefer adb-pushed fixture, fall back to bundled asset.
+                            val fixtureName = "test_speech.wav"
                             val adbFile = java.io.File("/data/local/tmp/test_speech.wav")
-                            val wavPath = if (adbFile.exists()) {
+                                .takeIf { it.exists() }
+                            val wavPath = if (adbFile != null) {
                                 adbFile.absolutePath
                             } else {
-                                val cached = java.io.File(cacheDir, "test_speech.wav")
+                                val cached = java.io.File(cacheDir, fixtureName)
                                 if (!cached.exists()) {
-                                    assets.open("test_speech.wav").use { input ->
+                                    assets.open(fixtureName).use { input ->
                                         cached.outputStream().use { output -> input.copyTo(output) }
                                     }
                                 }

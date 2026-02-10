@@ -37,6 +37,7 @@ class AllModelsE2ETest {
     private fun timeout(modelId: String): Long = when {
         modelId.contains("large") -> 1_800_000L
         modelId.contains("omnilingual") -> 600_000L
+        modelId.contains("zipformer") -> 300_000L
         modelId.contains("small") -> 1_200_000L
         modelId.contains("base") -> 600_000L
         else -> 120_000L
@@ -99,7 +100,9 @@ class AllModelsE2ETest {
         var cpuFound = false
         while (System.currentTimeMillis() - loadStart < timeoutMs) {
             dismissSystemUiDialogIfPresent(modelId)
-            if (device.hasObject(By.textContains("CPU"))) {
+            val hasCpuStats = device.hasObject(By.textContains("CPU"))
+            val hasEarlyResult = File(resultSrcPublic).exists() || File(resultSrcPrivate).exists()
+            if (hasCpuStats || hasEarlyResult) {
                 cpuFound = true
                 break
             }

@@ -30,6 +30,8 @@ ALL_MODELS=(
     "whisper-base"
     "whisper-base-en"
     "whisper-small"
+    "whisper-large-v3-turbo"
+    "whisper-large-v3-turbo-compressed"
     "moonshine-tiny"
     "moonshine-base"
     "sensevoice-small"
@@ -44,6 +46,8 @@ TEST_METHODS=(
     whisper-base test_whisperBase
     whisper-base-en test_whisperBaseEn
     whisper-small test_whisperSmall
+    whisper-large-v3-turbo test_whisperLargeV3Turbo
+    whisper-large-v3-turbo-compressed test_whisperLargeV3TurboCompressed
     moonshine-tiny test_moonshineTiny
     moonshine-base test_moonshineBase
     sensevoice-small test_sensevoiceSmall

@@ -36,8 +36,8 @@ data class ModelInfo(
         private const val SENSEVOICE_BASE_URL =
             "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/"
 
-        private const val ZIPFORMER_20M_BASE_URL =
-            "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17/resolve/main/"
+        private const val ZIPFORMER_EN_BASE_URL =
+            "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main/"
 
         private const val OMNILINGUAL_300M_BASE_URL =
             "https://huggingface.co/csukuangfj2/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/resolve/main/"
@@ -171,14 +171,23 @@ data class ModelInfo(
                 engineType = EngineType.SHERPA_ONNX_STREAMING,
                 sherpaModelType = SherpaModelType.ZIPFORMER_TRANSDUCER,
                 parameterCount = "20M",
-                sizeOnDisk = "~46 MB",
-                description = "Real-time streaming English. Ultra-low latency.",
+                sizeOnDisk = "~73 MB",
+                description = "Real-time streaming English model with improved accuracy.",
                 languages = "English",
                 files = listOf(
-                    ModelFile("${ZIPFORMER_20M_BASE_URL}encoder-epoch-99-avg-1.int8.onnx", "encoder-epoch-99-avg-1.int8.onnx"),
-                    ModelFile("${ZIPFORMER_20M_BASE_URL}decoder-epoch-99-avg-1.onnx", "decoder-epoch-99-avg-1.onnx"),
-                    ModelFile("${ZIPFORMER_20M_BASE_URL}joiner-epoch-99-avg-1.int8.onnx", "joiner-epoch-99-avg-1.int8.onnx"),
-                    ModelFile("${ZIPFORMER_20M_BASE_URL}tokens.txt", "tokens.txt"),
+                    ModelFile(
+                        "${ZIPFORMER_EN_BASE_URL}encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+                        "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx"
+                    ),
+                    ModelFile(
+                        "${ZIPFORMER_EN_BASE_URL}decoder-epoch-99-avg-1-chunk-16-left-128.onnx",
+                        "decoder-epoch-99-avg-1-chunk-16-left-128.onnx"
+                    ),
+                    ModelFile(
+                        "${ZIPFORMER_EN_BASE_URL}joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+                        "joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx"
+                    ),
+                    ModelFile("${ZIPFORMER_EN_BASE_URL}tokens.txt", "tokens.txt"),
                 )
             ),
         )
