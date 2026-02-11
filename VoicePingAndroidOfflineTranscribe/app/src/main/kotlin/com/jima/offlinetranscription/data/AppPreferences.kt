@@ -1,12 +1,15 @@
 package com.voiceping.offlinetranscription.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import java.util.Locale
 
 private val Context.dataStore by preferencesDataStore(name = "app_preferences")
 
@@ -22,13 +25,21 @@ class AppPreferences(private val context: Context) {
         private val TRANSLATION_TARGET_LANGUAGE = stringPreferencesKey("translation_target_language")
     }
 
-    val selectedModelId: Flow<String?> = context.dataStore.data.map { it[SELECTED_MODEL_ID] }
-    val lastModelPath: Flow<String?> = context.dataStore.data.map { it[LAST_MODEL_PATH] }
-    val useVAD: Flow<Boolean> = context.dataStore.data.map { it[USE_VAD] ?: true }
-    val enableTimestamps: Flow<Boolean> = context.dataStore.data.map { it[ENABLE_TIMESTAMPS] ?: true }
-    val translationEnabled: Flow<Boolean> = context.dataStore.data.map { it[TRANSLATION_ENABLED] ?: false }
-    val translationSourceLanguage: Flow<String> = context.dataStore.data.map { it[TRANSLATION_SOURCE_LANGUAGE] ?: "en" }
-    val translationTargetLanguage: Flow<String> = context.dataStore.data.map { it[TRANSLATION_TARGET_LANGUAGE] ?: "ja" }
+    private val preferencesData = context.dataStore.data
+
+    private fun <T> preferenceFlow(reader: (Preferences) -> T): Flow<T> {
+        return preferencesData
+            .map(reader)
+            .distinctUntilChanged()
+    }
+
+    val selectedModelId: Flow<String?> = preferenceFlow { it[SELECTED_MODEL_ID] }
+    val lastModelPath: Flow<String?> = preferenceFlow { it[LAST_MODEL_PATH] }
+    val useVAD: Flow<Boolean> = preferenceFlow { it[USE_VAD] ?: true }
+    val enableTimestamps: Flow<Boolean> = preferenceFlow { it[ENABLE_TIMESTAMPS] ?: true }
+    val translationEnabled: Flow<Boolean> = preferenceFlow { it[TRANSLATION_ENABLED] ?: false }
+    val translationSourceLanguage: Flow<String> = preferenceFlow { it[TRANSLATION_SOURCE_LANGUAGE] ?: "en" }
+    val translationTargetLanguage: Flow<String> = preferenceFlow { it[TRANSLATION_TARGET_LANGUAGE] ?: "ja" }
 
     suspend fun setSelectedModelId(id: String) {
         context.dataStore.edit { it[SELECTED_MODEL_ID] = id }
@@ -51,10 +62,12 @@ class AppPreferences(private val context: Context) {
     }
 
     suspend fun setTranslationSourceLanguage(languageCode: String) {
-        context.dataStore.edit { it[TRANSLATION_SOURCE_LANGUAGE] = languageCode }
+        val normalized = languageCode.trim().lowercase(Locale.ROOT).ifEmpty { "en" }
+        context.dataStore.edit { it[TRANSLATION_SOURCE_LANGUAGE] = normalized }
     }
 
     suspend fun setTranslationTargetLanguage(languageCode: String) {
-        context.dataStore.edit { it[TRANSLATION_TARGET_LANGUAGE] = languageCode }
+        val normalized = languageCode.trim().lowercase(Locale.ROOT).ifEmpty { "ja" }
+        context.dataStore.edit { it[TRANSLATION_TARGET_LANGUAGE] = normalized }
     }
 }

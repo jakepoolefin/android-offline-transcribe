@@ -634,40 +634,12 @@ class WhisperEngine(
         transitionTo(SessionState.Stopping)
         // Stop mic input first so no new audio arrives
         audioRecorder.stopRecording()
-        recordingJob?.cancel()
-        energyJob?.cancel()
-        recordingJob = null
-        energyJob = null
-
-        // Drain final audio through the transcription engine before cleanup
-        val engine = currentEngine
-        if (engine != null && engine.isLoaded) {
-            // Feed any remaining buffered audio to the engine
-            val currentCount = audioRecorder.sampleCount
-            if (currentCount > lastBufferSize) {
-                val remaining = audioRecorder.samplesRange(lastBufferSize, currentCount)
-                if (remaining.isNotEmpty() && engine.isStreaming) {
-                    engine.feedAudio(remaining)
-                    lastBufferSize = currentCount
-                }
-            }
-            // Flush the streaming decoder
-            if (engine.isStreaming) {
-                val finalResult = engine.drainFinalAudio()
-                if (finalResult != null && finalResult.text.isNotBlank()) {
-                    chunkManager.confirmedSegments.add(finalResult)
-                    _confirmedText.value = chunkManager.renderSegmentsText(chunkManager.confirmedSegments)
-                    _hypothesisText.value = ""
-                    chunkManager.confirmedText = _confirmedText.value
-                    scheduleTranslationUpdate()
-                }
-            }
-        }
+        cancelRecorderAndEnergyJobs()
+        drainFinalStreamingAudioIfNeeded()
 
         // Now invalidate and clean up
         invalidateSession()
-        transcriptionJob?.cancel()
-        transcriptionJob = null
+        cancelTranscriptionJob()
         transitionTo(SessionState.Idle)
     }
 
@@ -675,38 +647,59 @@ class WhisperEngine(
         if (_sessionState.value != SessionState.Recording) return
         transitionTo(SessionState.Stopping)
         audioRecorder.stopRecording()
+        cancelRecorderAndEnergyJobsAndWait()
+        drainFinalStreamingAudioIfNeeded()
+
+        invalidateSession()
+        cancelTranscriptionJobAndWait()
+        transitionTo(SessionState.Idle)
+    }
+
+    private fun cancelRecorderAndEnergyJobs() {
+        recordingJob?.cancel()
+        energyJob?.cancel()
+        recordingJob = null
+        energyJob = null
+    }
+
+    private suspend fun cancelRecorderAndEnergyJobsAndWait() {
         recordingJob?.cancelAndJoin()
         energyJob?.cancelAndJoin()
         recordingJob = null
         energyJob = null
+    }
 
-        // Drain final audio
+    private fun cancelTranscriptionJob() {
+        transcriptionJob?.cancel()
+        transcriptionJob = null
+    }
+
+    private suspend fun cancelTranscriptionJobAndWait() {
+        transcriptionJob?.cancelAndJoin()
+        transcriptionJob = null
+    }
+
+    private fun drainFinalStreamingAudioIfNeeded() {
         val engine = currentEngine
-        if (engine != null && engine.isLoaded) {
-            val currentCount = audioRecorder.sampleCount
-            if (currentCount > lastBufferSize) {
-                val remaining = audioRecorder.samplesRange(lastBufferSize, currentCount)
-                if (remaining.isNotEmpty() && engine.isStreaming) {
-                    engine.feedAudio(remaining)
-                    lastBufferSize = currentCount
-                }
-            }
-            if (engine.isStreaming) {
-                val finalResult = engine.drainFinalAudio()
-                if (finalResult != null && finalResult.text.isNotBlank()) {
-                    chunkManager.confirmedSegments.add(finalResult)
-                    _confirmedText.value = chunkManager.renderSegmentsText(chunkManager.confirmedSegments)
-                    _hypothesisText.value = ""
-                    chunkManager.confirmedText = _confirmedText.value
-                    scheduleTranslationUpdate()
-                }
+        if (engine == null || !engine.isLoaded || !engine.isStreaming) return
+
+        val currentCount = audioRecorder.sampleCount
+        if (currentCount > lastBufferSize) {
+            val remaining = audioRecorder.samplesRange(lastBufferSize, currentCount)
+            if (remaining.isNotEmpty()) {
+                engine.feedAudio(remaining)
+                lastBufferSize = currentCount
             }
         }
 
-        invalidateSession()
-        transcriptionJob?.cancelAndJoin()
-        transcriptionJob = null
-        transitionTo(SessionState.Idle)
+        val finalResult = engine.drainFinalAudio()
+        if (finalResult == null || finalResult.text.isBlank()) return
+
+        chunkManager.confirmedSegments.add(finalResult)
+        _confirmedText.value = chunkManager.renderSegmentsText(chunkManager.confirmedSegments)
+        _hypothesisText.value = ""
+        chunkManager.confirmedText = _confirmedText.value
+        scheduleTranslationUpdate()
     }
 
     fun setLastError(error: AppError) {

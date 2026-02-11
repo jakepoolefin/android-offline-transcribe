@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.voiceping.offlinetranscription.model.ModelInfo
 import com.voiceping.offlinetranscription.service.WhisperEngine
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -40,6 +41,21 @@ class TranscriptionViewModel(
     val fullText: String
         get() = engine.fullTranscriptionText
 
+    private inline fun launchEngineAction(crossinline block: suspend () -> Unit): Job {
+        return viewModelScope.launch {
+            block()
+        }
+    }
+
+    private fun copyAssetIfMissing(context: Context, assetName: String): File {
+        val cached = File(context.cacheDir, assetName)
+        if (cached.exists()) return cached
+        context.assets.open(assetName).use { input ->
+            cached.outputStream().use { output -> input.copyTo(output) }
+        }
+        return cached
+    }
+
     fun toggleRecording() {
         if (engine.isRecording.value) {
             engine.stopRecording()
@@ -49,14 +65,14 @@ class TranscriptionViewModel(
     }
 
     fun startRecordingWithPreparation() {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.prewarmRealtimePath()
             engine.startRecording()
         }
     }
 
     fun prewarmOnScreenOpen() {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.prewarmRealtimePath()
         }
     }
@@ -75,12 +91,7 @@ class TranscriptionViewModel(
     }
 
     fun transcribeTestAsset(context: Context) {
-        val cached = File(context.cacheDir, "test_speech.wav")
-        if (!cached.exists()) {
-            context.assets.open("test_speech.wav").use { input ->
-                cached.outputStream().use { output -> input.copyTo(output) }
-            }
-        }
+        val cached = copyAssetIfMissing(context, "test_speech.wav")
         engine.transcribeFile(cached.absolutePath)
     }
 
@@ -91,37 +102,37 @@ class TranscriptionViewModel(
     }
 
     fun switchModel(model: ModelInfo) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.switchModel(model)
         }
     }
 
     fun setUseVAD(enabled: Boolean) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.setUseVAD(enabled)
         }
     }
 
     fun setEnableTimestamps(enabled: Boolean) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.setEnableTimestamps(enabled)
         }
     }
 
     fun setTranslationEnabled(enabled: Boolean) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.setTranslationEnabled(enabled)
         }
     }
 
     fun setTranslationSourceLanguageCode(languageCode: String) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.setTranslationSourceLanguageCode(languageCode)
         }
     }
 
     fun setTranslationTargetLanguageCode(languageCode: String) {
-        viewModelScope.launch {
+        launchEngineAction {
             engine.setTranslationTargetLanguageCode(languageCode)
         }
     }

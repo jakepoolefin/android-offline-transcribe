@@ -13,6 +13,18 @@ import java.util.concurrent.TimeUnit
 
 class ModelDownloader(private val modelsDir: File) {
 
+    companion object {
+        private const val DOWNLOAD_BUFFER_BYTES = 8 * 1024
+        private const val TEMP_SUFFIX = ".tmp"
+        private val MANAGED_MODEL_SUFFIXES = setOf(
+            ".onnx",
+            ".txt",
+            ".model",
+            ".bin",
+            TEMP_SUFFIX
+        )
+    }
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -36,6 +48,11 @@ class ModelDownloader(private val modelsDir: File) {
 
     /** Downloads all files for a model, emitting overall progress (0.0 to 1.0). */
     fun download(model: ModelInfo): Flow<Float> = flow {
+        if (model.files.isEmpty()) {
+            emit(1.0f)
+            return@flow
+        }
+
         val dir = modelDir(model)
         dir.mkdirs()
         pruneStaleModelFiles(dir, model)
@@ -51,7 +68,7 @@ class ModelDownloader(private val modelsDir: File) {
                 continue
             }
 
-            val tempFile = File(dir, "${modelFile.localName}.tmp")
+            val tempFile = File(dir, "${modelFile.localName}$TEMP_SUFFIX")
             val requestBuilder = Request.Builder().url(modelFile.url)
 
             // Support resume if temp file exists
@@ -59,31 +76,34 @@ class ModelDownloader(private val modelsDir: File) {
                 requestBuilder.addHeader("Range", "bytes=${tempFile.length()}-")
             }
 
-            val response = client.newCall(requestBuilder.build()).execute()
-            if (!response.isSuccessful) {
-                throw Exception("Download failed: HTTP ${response.code} for ${modelFile.localName}")
-            }
+            var bytesRead: Long
+            var totalBytes: Long
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw Exception("Download failed: HTTP ${response.code} for ${modelFile.localName}")
+                }
 
-            val body = response.body ?: throw Exception("Empty response body")
-            val contentLength = body.contentLength()
-            val existingBytes = if (response.code == 206) tempFile.length() else 0L
-            val totalBytes = contentLength + existingBytes
+                val body = response.body ?: throw Exception("Empty response body")
+                val contentLength = body.contentLength()
+                val existingBytes = if (response.code == 206) tempFile.length() else 0L
+                totalBytes = contentLength + existingBytes
 
-            val outputStream = FileOutputStream(tempFile, response.code == 206)
-            val buffer = ByteArray(8192)
-            var bytesRead: Long = existingBytes
+                val outputStream = FileOutputStream(tempFile, response.code == 206)
+                val buffer = ByteArray(DOWNLOAD_BUFFER_BYTES)
+                bytesRead = existingBytes
 
-            body.byteStream().use { input ->
-                outputStream.use { output ->
-                    var read: Int
-                    while (input.read(buffer).also { read = it } != -1) {
-                        output.write(buffer, 0, read)
-                        bytesRead += read
-                        if (totalBytes > 0) {
-                            // Progress within this file, scaled to overall progress
-                            val fileProgress = bytesRead.toFloat() / totalBytes.toFloat()
-                            val overallProgress = (fileIndex + fileProgress) / totalFiles
-                            emit(overallProgress)
+                body.byteStream().use { input ->
+                    outputStream.use { output ->
+                        var read: Int
+                        while (input.read(buffer).also { read = it } != -1) {
+                            output.write(buffer, 0, read)
+                            bytesRead += read
+                            if (totalBytes > 0) {
+                                // Progress within this file, scaled to overall progress
+                                val fileProgress = bytesRead.toFloat() / totalBytes.toFloat()
+                                val overallProgress = (fileIndex + fileProgress) / totalFiles
+                                emit(overallProgress)
+                            }
                         }
                     }
                 }
@@ -91,7 +111,7 @@ class ModelDownloader(private val modelsDir: File) {
 
             // Verify download size matches Content-Length
             if (totalBytes > 0 && bytesRead != totalBytes) {
-                tempFile.delete()
+                tempFile.safeDelete()
                 throw Exception(
                     "Download incomplete for ${modelFile.localName}: " +
                     "expected $totalBytes bytes, got $bytesRead bytes"
@@ -101,7 +121,7 @@ class ModelDownloader(private val modelsDir: File) {
             // Rename temp to final
             if (!tempFile.renameTo(targetFile)) {
                 tempFile.copyTo(targetFile, overwrite = true)
-                tempFile.delete()
+                tempFile.safeDelete()
             }
         }
         emit(1.0f)
@@ -117,19 +137,23 @@ class ModelDownloader(private val modelsDir: File) {
             if (!file.isFile) return@forEach
 
             val name = file.name
-            val baseName = if (name.endsWith(".tmp")) name.removeSuffix(".tmp") else name
+            val baseName = name.removeSuffix(TEMP_SUFFIX)
             val isExpected = expected.contains(baseName)
             if (isExpected) return@forEach
 
-            val removable =
-                name.endsWith(".onnx") ||
-                    name.endsWith(".txt") ||
-                    name.endsWith(".model") ||
-                    name.endsWith(".bin") ||
-                    name.endsWith(".tmp")
-            if (removable) {
-                file.delete()
+            if (name.hasManagedModelSuffix()) {
+                file.safeDelete()
             }
+        }
+    }
+
+    private fun String.hasManagedModelSuffix(): Boolean {
+        return MANAGED_MODEL_SUFFIXES.any { endsWith(it) }
+    }
+
+    private fun File.safeDelete() {
+        if (exists() && !delete()) {
+            // Best effort cleanup only; caller validates final artifacts separately.
         }
     }
 }
