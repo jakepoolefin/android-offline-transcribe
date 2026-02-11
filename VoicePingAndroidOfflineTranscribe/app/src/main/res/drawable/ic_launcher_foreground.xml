@@ -4,7 +4,36 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Microphone head (ellipse) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M54,36 C54,36 54,36 54,36 C57.3,36 60,38.7 60,42 L60,54 C60,57.3 57.3,60 54,60 C50.7,60 48,57.3 48,54 L48,42 C48,38.7 50.7,36 54,36 Z M66,54 L66,54 C66,60.6 60.6,66 54,66 C47.4,66 42,60.6 42,54 L39,54 C39,62.3 45.3,69.2 53,69.9 L53,75 L55,75 L55,69.9 C62.7,69.2 69,62.3 69,54 L66,54 Z"/>
+        android:pathData="M54,25 C50.1,25 47,28.1 47,32 L47,46 C47,49.9 50.1,53 54,53 C57.9,53 61,49.9 61,46 L61,32 C61,28.1 57.9,25 54,25 Z"/>
+    <!-- Cradle arc -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,46 C40,53.7 46.3,60 54,60 C61.7,60 68,53.7 68,46 L65.5,46 C65.5,52.3 60.3,57.5 54,57.5 C47.7,57.5 42.5,52.3 42.5,46 L40,46 Z"/>
+    <!-- Stand -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M52.8,60 L55.2,60 L55.2,66 L52.8,66 Z"/>
+    <!-- Base -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M48,65 L60,65 L60,67 L48,67 Z"/>
+    <!-- Waveform bars -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,78 L32.5,78 L32.5,84 L30,84 Z
+                          M34,76 L36.5,76 L36.5,86 L34,86 Z
+                          M38,77 L40.5,77 L40.5,85 L38,85 Z
+                          M42,73 L44.5,73 L44.5,89 L42,89 Z
+                          M46,75 L48.5,75 L48.5,87 L46,87 Z
+                          M50,71 L52.5,71 L52.5,91 L50,91 Z
+                          M54,76 L56.5,76 L56.5,86 L54,86 Z
+                          M58,73 L60.5,73 L60.5,89 L58,89 Z
+                          M62,75 L64.5,75 L64.5,87 L62,87 Z
+                          M66,77 L68.5,77 L68.5,85 L66,85 Z
+                          M70,74 L72.5,74 L72.5,88 L70,88 Z
+                          M74,76 L76.5,76 L76.5,86 L74,86 Z
+                          M78,78 L80.5,78 L80.5,84 L78,84 Z"/>
 </vector>
