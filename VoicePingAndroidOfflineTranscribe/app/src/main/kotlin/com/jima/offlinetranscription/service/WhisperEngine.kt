@@ -1,12 +1,15 @@
 package com.voiceping.offlinetranscription.service
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import com.voiceping.offlinetranscription.data.AppPreferences
+import com.voiceping.offlinetranscription.model.AudioInputMode
 import com.voiceping.offlinetranscription.model.AppError
 import com.voiceping.offlinetranscription.model.EngineType
 import com.voiceping.offlinetranscription.model.ModelInfo
@@ -99,6 +102,14 @@ class WhisperEngine(
 
     private val _enableTimestamps = MutableStateFlow(true)
     val enableTimestamps: StateFlow<Boolean> = _enableTimestamps.asStateFlow()
+
+    private val _audioInputMode = MutableStateFlow(AudioInputMode.MICROPHONE)
+    val audioInputMode: StateFlow<AudioInputMode> = _audioInputMode.asStateFlow()
+
+    private val _systemAudioCaptureReady = MutableStateFlow(false)
+    val systemAudioCaptureReady: StateFlow<Boolean> = _systemAudioCaptureReady.asStateFlow()
+    val isSystemAudioCaptureSupported: Boolean
+        get() = audioRecorder.isSystemAudioCaptureSupported
 
     private val _translationEnabled = MutableStateFlow(false)
     val translationEnabled: StateFlow<Boolean> = _translationEnabled.asStateFlow()
@@ -486,11 +497,12 @@ class WhisperEngine(
      * does not steal the beginning of the utterance.
      */
     suspend fun prewarmRecordingPath() {
+        if (_audioInputMode.value != AudioInputMode.MICROPHONE) return
         if (!audioRecorder.hasPermission()) return
         if (_sessionState.value != SessionState.Idle) return
         recorderPrewarmMutex.withLock {
             withContext(Dispatchers.IO) {
-                audioRecorder.prewarm()
+                audioRecorder.prewarm(_audioInputMode.value)
             }
         }
     }
@@ -548,7 +560,7 @@ class WhisperEngine(
     suspend fun prewarmRealtimePath() {
         Log.i(
             "WhisperEngine",
-            "prewarmRealtimePath: state=${_sessionState.value}, micPermission=${audioRecorder.hasPermission()}, modelLoaded=${currentEngine?.isLoaded == true}"
+            "prewarmRealtimePath: state=${_sessionState.value}, inputMode=${_audioInputMode.value}, micPermission=${audioRecorder.hasPermission()}, modelLoaded=${currentEngine?.isLoaded == true}"
         )
         prewarmRecordingPath()
         prewarmInferencePath()
@@ -568,6 +580,20 @@ class WhisperEngine(
             transitionTo(SessionState.Error)
             return
         }
+
+        if (_audioInputMode.value == AudioInputMode.SYSTEM_PLAYBACK) {
+            if (!audioRecorder.isSystemAudioCaptureSupported) {
+                _lastError.value = AppError.SystemAudioCaptureUnsupported()
+                transitionTo(SessionState.Error)
+                return
+            }
+            if (!audioRecorder.hasSystemAudioCapturePermission) {
+                _lastError.value = AppError.SystemAudioCapturePermissionDenied()
+                transitionTo(SessionState.Error)
+                return
+            }
+        }
+
         if (!audioRecorder.hasPermission()) {
             Log.e("WhisperEngine", "startRecording: no mic permission")
             _lastError.value = AppError.MicrophonePermissionDenied()
@@ -599,13 +625,13 @@ class WhisperEngine(
         recordingJob = null
         energyJob = null
 
-        recordingJob = scope.launch(Dispatchers.IO) {
-            try {
-                if (!isSessionActive(activeSessionToken)) return@launch
-                audioRecorder.startRecording()
-            } catch (e: Throwable) {
-                if (!isSessionActive(activeSessionToken)) return@launch
-                withContext(Dispatchers.Main) {
+            recordingJob = scope.launch(Dispatchers.IO) {
+                try {
+                    if (!isSessionActive(activeSessionToken)) return@launch
+                    audioRecorder.startRecording(_audioInputMode.value)
+                } catch (e: Throwable) {
+                    if (!isSessionActive(activeSessionToken)) return@launch
+                    withContext(Dispatchers.Main) {
                     _lastError.value = AppError.TranscriptionFailed(e)
                     transitionTo(SessionState.Error)
                 }
@@ -704,6 +730,39 @@ class WhisperEngine(
 
     fun setLastError(error: AppError) {
         _lastError.value = error
+    }
+
+    fun setAudioInputMode(mode: AudioInputMode) {
+        _audioInputMode.value = mode
+    }
+
+    fun setSystemAudioCapturePermission(resultCode: Int, data: Intent?) {
+        if (!audioRecorder.isSystemAudioCaptureSupported) {
+            _systemAudioCaptureReady.value = false
+            _lastError.value = AppError.SystemAudioCaptureUnsupported()
+            return
+        }
+        if (resultCode != Activity.RESULT_OK || data == null) {
+            _systemAudioCaptureReady.value = false
+            _lastError.value = AppError.SystemAudioCapturePermissionDenied()
+            return
+        }
+        val granted = audioRecorder.setSystemAudioCapturePermission(resultCode, data)
+        _systemAudioCaptureReady.value = granted
+        if (!granted) {
+            _lastError.value = if (audioRecorder.isSystemAudioCaptureSupported) {
+                AppError.SystemAudioCapturePermissionDenied()
+            } else {
+                AppError.SystemAudioCaptureUnsupported()
+            }
+        } else if (_lastError.value is AppError.SystemAudioCapturePermissionDenied
+            || _lastError.value is AppError.SystemAudioCaptureUnsupported
+        ) {
+            _lastError.value = null
+            if (_sessionState.value == SessionState.Error) {
+                transitionTo(SessionState.Idle)
+            }
+        }
     }
 
     fun clearError() {
@@ -1704,6 +1763,8 @@ class WhisperEngine(
             recordingJob?.cancel()
             energyJob?.cancel()
         }
+        audioRecorder.clearSystemAudioCapturePermission()
+        _systemAudioCaptureReady.value = false
         translationJob?.cancel()
         scope.cancel()
         mlKitTranslator.close()

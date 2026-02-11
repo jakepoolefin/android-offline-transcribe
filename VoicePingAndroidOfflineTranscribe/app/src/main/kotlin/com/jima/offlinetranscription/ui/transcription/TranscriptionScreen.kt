@@ -1,7 +1,11 @@
 package com.voiceping.offlinetranscription.ui.transcription
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
 import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,6 +36,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,6 +69,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.voiceping.offlinetranscription.BuildConfig
+import com.voiceping.offlinetranscription.model.AudioInputMode
 import com.voiceping.offlinetranscription.model.ModelInfo
 import com.voiceping.offlinetranscription.service.E2ETestResult
 import com.voiceping.offlinetranscription.ui.components.AudioVisualizer
@@ -75,27 +81,77 @@ import com.voiceping.offlinetranscription.util.FormatUtils
 fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> Unit = {}) {
     val context = LocalContext.current
     var pendingPermissionStart by remember { mutableStateOf(false) }
+    val projectionManager = remember(context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
+        } else {
+            null
+        }
+    }
+
+    val mediaProjectionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        viewModel.setSystemAudioCapturePermission(result.resultCode, result.data)
+        if (pendingPermissionStart &&
+            result.resultCode == Activity.RESULT_OK &&
+            result.data != null
+        ) {
+            pendingPermissionStart = false
+            viewModel.startRecordingWithPreparation()
+        } else if (pendingPermissionStart) {
+            pendingPermissionStart = false
+            Log.i("TranscriptionScreen", "System audio capture permission denied/cancelled")
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted && pendingPermissionStart) {
-            pendingPermissionStart = false
-            viewModel.startRecordingWithPreparation()
+            if (viewModel.audioInputMode.value == AudioInputMode.SYSTEM_PLAYBACK &&
+                !viewModel.systemAudioCaptureReady.value
+            ) {
+                projectionManager?.let { manager ->
+                    mediaProjectionLauncher.launch(manager.createScreenCaptureIntent())
+                } ?: run {
+                    pendingPermissionStart = false
+                }
+            } else {
+                pendingPermissionStart = false
+                viewModel.startRecordingWithPreparation()
+            }
         } else {
             pendingPermissionStart = false
             Log.i("TranscriptionScreen", "Permission result ignored (granted=$granted)")
         }
     }
 
+    fun requestSystemAudioCapture() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || projectionManager == null) {
+            viewModel.setSystemAudioCapturePermission(Activity.RESULT_CANCELED, null)
+            return
+        }
+        mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+    }
+
     fun onRecordClick() {
         val hasPermission = ContextCompat.checkSelfPermission(
             context, Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
+        val wantsSystemCapture = viewModel.audioInputMode.value == AudioInputMode.SYSTEM_PLAYBACK
 
         if (viewModel.isRecording.value) {
             pendingPermissionStart = false
             viewModel.toggleRecording()
+        } else if (wantsSystemCapture && !viewModel.systemAudioCaptureReady.value) {
+            if (hasPermission) {
+                pendingPermissionStart = true
+                requestSystemAudioCapture()
+            } else {
+                pendingPermissionStart = true
+                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
         } else if (hasPermission) {
             pendingPermissionStart = false
             viewModel.startRecordingWithPreparation()
@@ -112,6 +168,8 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
     val selectedModel by viewModel.selectedModel.collectAsState()
     val useVAD by viewModel.useVAD.collectAsState()
     val enableTimestamps by viewModel.enableTimestamps.collectAsState()
+    val audioInputMode by viewModel.audioInputMode.collectAsState()
+    val systemAudioCaptureReady by viewModel.systemAudioCaptureReady.collectAsState()
     val displayConfirmedText = remember(confirmedText) { confirmedText.trim() }
     val displayHypothesisText = remember(hypothesisText) { hypothesisText.trim() }
 
@@ -253,6 +311,14 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
                     .heightIn(max = 260.dp)
                     .verticalScroll(rememberScrollState())
             ) {
+                AudioInputModeCard(
+                    audioInputMode = audioInputMode,
+                    systemCaptureReady = systemAudioCaptureReady,
+                    systemCaptureSupported = viewModel.isSystemAudioCaptureSupported,
+                    onInputModeChange = { viewModel.setAudioInputMode(it) },
+                    onRequestSystemCapture = { requestSystemAudioCapture() }
+                )
+
                 if (isRecording) {
                     RecordingStatsBar(viewModel)
                 }
@@ -330,9 +396,19 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
 
     lastError?.let { error ->
         val isPermissionError = error is com.voiceping.offlinetranscription.model.AppError.MicrophonePermissionDenied
+        val isSystemCapturePermissionError =
+            error is com.voiceping.offlinetranscription.model.AppError.SystemAudioCapturePermissionDenied
         AlertDialog(
             onDismissRequest = { viewModel.dismissError() },
-            title = { Text(if (isPermissionError) "Permission Required" else "Error") },
+            title = {
+                Text(
+                    if (isPermissionError || isSystemCapturePermissionError) {
+                        "Permission Required"
+                    } else {
+                        "Error"
+                    }
+                )
+            },
             text = { Text(error.message) },
             confirmButton = {
                 if (isPermissionError) {
@@ -342,6 +418,13 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
                     }) {
                         Text("Grant Permission")
                     }
+                } else if (isSystemCapturePermissionError) {
+                    TextButton(onClick = {
+                        viewModel.dismissError()
+                        requestSystemAudioCapture()
+                    }) {
+                        Text("Enable System Capture")
+                    }
                 } else {
                     TextButton(onClick = { viewModel.dismissError() }) {
                         Text("OK")
@@ -349,7 +432,7 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
                 }
             },
             dismissButton = {
-                if (isPermissionError) {
+                if (isPermissionError || isSystemCapturePermissionError) {
                     TextButton(onClick = { viewModel.dismissError() }) {
                         Text("Cancel")
                     }
@@ -381,6 +464,70 @@ fun TranscriptionScreen(viewModel: TranscriptionViewModel, onChangeModel: () -> 
             onTargetLanguageChange = { viewModel.setTranslationTargetLanguageCode(it) },
             onDismiss = { showSettings = false }
         )
+    }
+}
+
+@Composable
+private fun AudioInputModeCard(
+    audioInputMode: AudioInputMode,
+    systemCaptureReady: Boolean,
+    systemCaptureSupported: Boolean,
+    onInputModeChange: (AudioInputMode) -> Unit,
+    onRequestSystemCapture: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+            .padding(12.dp)
+    ) {
+        Text(
+            text = "Audio Source",
+            style = MaterialTheme.typography.titleSmall
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = audioInputMode == AudioInputMode.MICROPHONE,
+                onClick = { onInputModeChange(AudioInputMode.MICROPHONE) },
+                label = { Text("Voice") }
+            )
+            FilterChip(
+                selected = audioInputMode == AudioInputMode.SYSTEM_PLAYBACK,
+                onClick = { onInputModeChange(AudioInputMode.SYSTEM_PLAYBACK) },
+                enabled = systemCaptureSupported,
+                label = { Text("System") }
+            )
+        }
+
+        if (audioInputMode == AudioInputMode.SYSTEM_PLAYBACK) {
+            val statusText = when {
+                !systemCaptureSupported -> "System capture requires Android 10+."
+                systemCaptureReady -> "System capture enabled. Note: carrier call audio may still be blocked by OS/device policy."
+                else -> "Enable system capture to transcribe playback audio."
+            }
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+
+            if (systemCaptureSupported && !systemCaptureReady) {
+                OutlinedButton(
+                    onClick = onRequestSystemCapture,
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    Text("Enable System Capture")
+                }
+            }
+        }
     }
 }
 

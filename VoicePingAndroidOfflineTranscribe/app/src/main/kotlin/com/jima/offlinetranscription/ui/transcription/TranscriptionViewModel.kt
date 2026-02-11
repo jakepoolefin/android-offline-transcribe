@@ -1,8 +1,10 @@
 package com.voiceping.offlinetranscription.ui.transcription
 
 import android.content.Context
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.voiceping.offlinetranscription.model.AudioInputMode
 import com.voiceping.offlinetranscription.model.ModelInfo
 import com.voiceping.offlinetranscription.service.WhisperEngine
 import kotlinx.coroutines.Job
@@ -24,6 +26,10 @@ class TranscriptionViewModel(
     val modelState = engine.modelState
     val useVAD = engine.useVAD
     val enableTimestamps = engine.enableTimestamps
+    val audioInputMode = engine.audioInputMode
+    val systemAudioCaptureReady = engine.systemAudioCaptureReady
+    val isSystemAudioCaptureSupported: Boolean
+        get() = engine.isSystemAudioCaptureSupported
     val cpuPercent = engine.cpuPercent
     val memoryMB = engine.memoryMB
     val e2eResult = engine.e2eResult
@@ -79,6 +85,14 @@ class TranscriptionViewModel(
 
     fun clearTranscription() {
         engine.clearTranscription()
+    }
+
+    fun setAudioInputMode(mode: AudioInputMode) {
+        engine.setAudioInputMode(mode)
+    }
+
+    fun setSystemAudioCapturePermission(resultCode: Int, data: Intent?) {
+        engine.setSystemAudioCapturePermission(resultCode, data)
     }
 
     /** Dismiss error without clearing transcription text. */
