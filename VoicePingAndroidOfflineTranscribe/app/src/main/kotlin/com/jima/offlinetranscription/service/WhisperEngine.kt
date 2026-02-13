@@ -111,6 +111,7 @@ class WhisperEngine(
     val isSystemAudioCaptureSupported: Boolean
         get() = audioRecorder.isSystemAudioCaptureSupported
 
+    @Volatile var e2eLocked = false
     private val _translationEnabled = MutableStateFlow(false)
     val translationEnabled: StateFlow<Boolean> = _translationEnabled.asStateFlow()
 
@@ -208,6 +209,19 @@ class WhisperEngine(
         private const val NO_SIGNAL_TIMEOUT_SECONDS = 8.0
         private const val SIGNAL_ENERGY_THRESHOLD = 0.005f
         private val WHITESPACE_REGEX = "\\s+".toRegex()
+
+        /**
+         * Normalize language codes: strip SenseVoice "<|en|>" markers,
+         * trim, lowercase, take first BCP-47 segment, validate letters only.
+         */
+        fun normalizeLanguageCode(raw: String?): String? {
+            if (raw.isNullOrBlank()) return null
+            val cleaned = raw
+                .replace("<|", "").replace("|>", "")
+                .trim().lowercase()
+                .split("-").first()
+            return cleaned.takeIf { it.isNotBlank() && it.all { c -> c.isLetter() } }
+        }
         private const val CJK_CHAR_CLASS = "[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}々〆ヵヶー]"
         private val CJK_INNER_SPACE_REGEX = "($CJK_CHAR_CLASS)\\s+($CJK_CHAR_CLASS)".toRegex()
         private val SPACE_BEFORE_CJK_PUNCT_REGEX = "\\s+([、。！？：；）」』】〉》])".toRegex()
@@ -224,6 +238,7 @@ class WhisperEngine(
     init {
         scope.launch {
             preferences.selectedModelId.collect { savedId ->
+                if (e2eLocked) return@collect
                 if (savedId != null) {
                     ModelInfo.availableModels.find { it.id == savedId }?.let {
                         _selectedModel.value = it
@@ -239,6 +254,7 @@ class WhisperEngine(
         }
         scope.launch {
             preferences.translationEnabled.collect { enabled ->
+                if (e2eLocked) return@collect
                 _translationEnabled.value = enabled
                 if (enabled) {
                     scheduleTranslationUpdate()
@@ -249,14 +265,22 @@ class WhisperEngine(
         }
         scope.launch {
             preferences.translationSourceLanguage.collect { code ->
-                _translationSourceLanguageCode.value = code
-                scheduleTranslationUpdate()
+                if (e2eLocked) return@collect
+                if (code != _translationSourceLanguageCode.value) {
+                    _translationSourceLanguageCode.value = code
+                    lastTranslationInput = null
+                    scheduleTranslationUpdate()
+                }
             }
         }
         scope.launch {
             preferences.translationTargetLanguage.collect { code ->
-                _translationTargetLanguageCode.value = code
-                scheduleTranslationUpdate()
+                if (e2eLocked) return@collect
+                if (code != _translationTargetLanguageCode.value) {
+                    _translationTargetLanguageCode.value = code
+                    lastTranslationInput = null
+                    scheduleTranslationUpdate()
+                }
             }
         }
         // Always-running system metrics sampling
@@ -475,8 +499,7 @@ class WhisperEngine(
     }
 
     suspend fun setTranslationSourceLanguageCode(languageCode: String) {
-        val normalized = languageCode.trim().lowercase()
-        if (normalized.isEmpty()) return
+        val normalized = normalizeLanguageCode(languageCode) ?: return
         _translationSourceLanguageCode.value = normalized
         preferences.setTranslationSourceLanguage(normalized)
         lastTranslationInput = null  // Force re-translation with new language
@@ -484,8 +507,7 @@ class WhisperEngine(
     }
 
     suspend fun setTranslationTargetLanguageCode(languageCode: String) {
-        val normalized = languageCode.trim().lowercase()
-        if (normalized.isEmpty()) return
+        val normalized = normalizeLanguageCode(languageCode) ?: return
         _translationTargetLanguageCode.value = normalized
         preferences.setTranslationTargetLanguage(normalized)
         lastTranslationInput = null  // Force re-translation with new language
@@ -1093,7 +1115,7 @@ class WhisperEngine(
         if (newSegments.isNotEmpty()) {
             chunkManager.consecutiveSilentWindows = 0
             // Extract detected language from engine (SenseVoice provides this)
-            val lang = newSegments.firstOrNull()?.detectedLanguage
+            val lang = normalizeLanguageCode(newSegments.firstOrNull()?.detectedLanguage)
             if (lang != null && lang != _detectedLanguage.value) {
                 _detectedLanguage.value = lang
                 applyDetectedLanguageToTranslation(lang)
@@ -1202,15 +1224,18 @@ class WhisperEngine(
 
         // If detected language matches target but not source, swap them
         if (lang == currentTarget && lang != currentSource) {
-            Log.i("WhisperEngine", "Detected language '$lang' matches target — swapping translation direction")
+            Log.i("WhisperEngine", "Detected language '$lang' matches target — swapping ($currentSource→$currentTarget becomes $currentTarget→$currentSource)")
             _translationSourceLanguageCode.value = currentTarget
             _translationTargetLanguageCode.value = currentSource
+            scope.launch {
+                preferences.setTranslationSourceLanguage(currentTarget)
+                preferences.setTranslationTargetLanguage(currentSource)
+            }
+            lastTranslationInput = null
             resetTranslationState()
+            scheduleTranslationUpdate()
         } else if (lang != currentSource && lang != currentTarget) {
-            // Detected a language that doesn't match either — use it as source
-            Log.i("WhisperEngine", "Detected language '$lang' — setting as translation source")
-            _translationSourceLanguageCode.value = lang
-            resetTranslationState()
+            Log.i("WhisperEngine", "Detected language '$lang' not in pair ($currentSource→$currentTarget) — ignoring")
         }
         // If lang == currentSource, no change needed
     }
@@ -1303,11 +1328,19 @@ class WhisperEngine(
                 if (elapsed > 0 && totalWords > 0) {
                     _tokensPerSecond.value = totalWords / elapsed
                 }
+                // Apply detected language to translation direction
+                val lang = normalizeLanguageCode(segments.firstOrNull()?.detectedLanguage)
+                if (lang != null && lang != _detectedLanguage.value) {
+                    _detectedLanguage.value = lang
+                    applyDetectedLanguageToTranslation(lang)
+                }
+
                 chunkManager.confirmedSegments.addAll(segments)
                 val renderedText = chunkManager.renderSegmentsText(segments)
                 chunkManager.confirmedText = renderedText
                 _confirmedText.value = renderedText
                 _hypothesisText.value = ""
+                Log.i("WhisperEngine", "E2E translation state: enabled=${_translationEnabled.value} src=${_translationSourceLanguageCode.value} tgt=${_translationTargetLanguageCode.value} translated=${_translatedConfirmedText.value.take(20)}")
                 scheduleTranslationUpdate()
                 val waitUntil = SystemClock.elapsedRealtime() + 12_000L
                 while (SystemClock.elapsedRealtime() < waitUntil) {
@@ -1478,6 +1511,18 @@ class WhisperEngine(
             Log.w("E2E", "Could not mirror E2E result JSON to public evidence dir", e)
         }
 
+        // Internal storage fallback — always accessible without permissions.
+        if (!wrote) {
+            try {
+                val internalFile = File(context.filesDir, "e2e_result_${modelId}.json")
+                internalFile.writeText(json)
+                Log.i("E2E", "Result written to internal: ${internalFile.absolutePath}")
+                wrote = true
+            } catch (e: Throwable) {
+                Log.w("E2E", "Could not write internal E2E result JSON", e)
+            }
+        }
+
         if (!wrote) {
             Log.w("E2E", "E2E result JSON was not written to any location")
         }
@@ -1550,17 +1595,25 @@ class WhisperEngine(
             return
         }
 
-        val confirmedSnapshot = _confirmedText.value.trim()
-        val hypothesisSnapshot = _hypothesisText.value.trim()
-        val sourceLanguageCode = _translationSourceLanguageCode.value.trim().lowercase()
-        val targetLanguageCode = _translationTargetLanguageCode.value.trim().lowercase()
-
-        if (sourceLanguageCode.isEmpty() || targetLanguageCode.isEmpty()) return
-
-        val currentInput = confirmedSnapshot to hypothesisSnapshot
-        if (lastTranslationInput == currentInput) return
+        // Quick pre-check: skip scheduling if language codes are not configured
+        val srcCheck = _translationSourceLanguageCode.value.trim()
+        val tgtCheck = _translationTargetLanguageCode.value.trim()
+        if (srcCheck.isEmpty() || tgtCheck.isEmpty()) return
 
         translationJob = scope.launch(Dispatchers.Default) {
+            delay(150)  // Debounce rapid updates during fast speech
+
+            // Re-read latest values after debounce
+            val confirmedSnapshot = _confirmedText.value.trim()
+            val hypothesisSnapshot = _hypothesisText.value.trim()
+            val sourceLanguageCode = _translationSourceLanguageCode.value.trim().lowercase()
+            val targetLanguageCode = _translationTargetLanguageCode.value.trim().lowercase()
+
+            if (sourceLanguageCode.isEmpty() || targetLanguageCode.isEmpty()) return@launch
+
+            val currentInput = confirmedSnapshot to hypothesisSnapshot
+            if (lastTranslationInput == currentInput) return@launch
+
             var warningMessage: String? = null
 
             var translatedConfirmed: String

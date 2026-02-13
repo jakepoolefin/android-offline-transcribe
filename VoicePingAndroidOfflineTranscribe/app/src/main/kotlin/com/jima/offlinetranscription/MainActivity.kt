@@ -35,6 +35,8 @@ class MainActivity : ComponentActivity() {
         val app = application as OfflineTranscriptionApp
         val isE2E = intent.getBooleanExtra("e2e_test", false)
         val e2eModelId = intent.getStringExtra("model_id")
+        val e2eTranslationSource = intent.getStringExtra("translation_source")
+        val e2eTranslationTarget = intent.getStringExtra("translation_target")
 
         setContent {
             OfflineTranscriptionTheme {
@@ -46,7 +48,15 @@ class MainActivity : ComponentActivity() {
                         val model = ModelInfo.availableModels.find { it.id == e2eModelId }
                         if (model != null) {
                             Log.i("E2E", "Auto-test mode: selecting $e2eModelId")
+                            // Lock E2E state to prevent DataStore collectors from
+                            // overwriting model selection and translation settings.
+                            app.whisperEngine.e2eLocked = true
                             app.whisperEngine.setSelectedModel(model)
+                            if (e2eTranslationSource != null && e2eTranslationTarget != null) {
+                                app.whisperEngine.setTranslationEnabled(true)
+                                app.whisperEngine.setTranslationSourceLanguageCode(e2eTranslationSource)
+                                app.whisperEngine.setTranslationTargetLanguageCode(e2eTranslationTarget)
+                            }
                             app.whisperEngine.setupModel()
 
                             // Wait for model to load (with timeout and error escape)

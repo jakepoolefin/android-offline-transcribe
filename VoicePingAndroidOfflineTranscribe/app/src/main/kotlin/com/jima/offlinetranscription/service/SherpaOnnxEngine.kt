@@ -105,7 +105,12 @@ class SherpaOnnxEngine(
 
                         text = result.text.trim()
                         timestamps = result.timestamps
+                        // SenseVoice returns language codes in "<|en|>" format — normalize
+                        // to plain BCP-47 (e.g. "en"). Same fix as iOS SherpaOnnxOfflineEngine.
                         lang = result.lang.takeIf { it.isNotBlank() }
+                            ?.replace("<|", "")?.replace("|>", "")
+                            ?.trim()?.lowercase()
+                            ?.takeIf { it.isNotBlank() }
                         var bestScore = if (text.isBlank()) Int.MIN_VALUE else scoreOmnilingualText(
                             text,
                             languageHint = language
