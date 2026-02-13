@@ -614,6 +614,14 @@ class WhisperEngine(
                 transitionTo(SessionState.Error)
                 return
             }
+            // Ensure foreground service is running for MediaProjection
+            try {
+                context.startForegroundService(
+                    Intent(context, MediaProjectionService::class.java)
+                )
+            } catch (e: Exception) {
+                Log.w("WhisperEngine", "Failed to start MediaProjectionService: ${e.message}")
+            }
         }
 
         if (!audioRecorder.hasPermission()) {
@@ -685,6 +693,15 @@ class WhisperEngine(
         cancelRecorderAndEnergyJobs()
         drainFinalStreamingAudioIfNeeded()
 
+        // Stop MediaProjection foreground service if it was running
+        if (_audioInputMode.value == AudioInputMode.SYSTEM_PLAYBACK) {
+            try {
+                context.stopService(Intent(context, MediaProjectionService::class.java))
+            } catch (e: Exception) {
+                Log.w("WhisperEngine", "Failed to stop MediaProjectionService: ${e.message}")
+            }
+        }
+
         // Now invalidate and clean up
         invalidateSession()
         cancelTranscriptionJob()
@@ -697,6 +714,14 @@ class WhisperEngine(
         audioRecorder.stopRecording()
         cancelRecorderAndEnergyJobsAndWait()
         drainFinalStreamingAudioIfNeeded()
+
+        if (_audioInputMode.value == AudioInputMode.SYSTEM_PLAYBACK) {
+            try {
+                context.stopService(Intent(context, MediaProjectionService::class.java))
+            } catch (e: Exception) {
+                Log.w("WhisperEngine", "Failed to stop MediaProjectionService: ${e.message}")
+            }
+        }
 
         invalidateSession()
         cancelTranscriptionJobAndWait()
@@ -1000,8 +1025,8 @@ class WhisperEngine(
             return
         }
 
-        // VAD check
-        if (_useVAD.value) {
+        // VAD check — bypass for system playback (continuous audio, not voice-triggered)
+        if (_useVAD.value && _audioInputMode.value != AudioInputMode.SYSTEM_PLAYBACK) {
             val vadBypassSamples = (AudioRecorder.SAMPLE_RATE * INITIAL_VAD_BYPASS_SECONDS).toInt()
             val bypassVadDuringStartup = initialPhase && currentBufferSize <= vadBypassSamples
             if (!bypassVadDuringStartup) {

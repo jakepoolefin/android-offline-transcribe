@@ -51,6 +51,21 @@ data class ModelInfo(
         )
 
         val availableModels = listOf(
+            // -- SenseVoice (sherpa-onnx) --
+            ModelInfo(
+                id = "sensevoice-small",
+                displayName = "SenseVoice Small",
+                engineType = EngineType.SHERPA_ONNX,
+                sherpaModelType = SherpaModelType.SENSE_VOICE,
+                parameterCount = "234M",
+                sizeOnDisk = "~240 MB",
+                description = "Multilingual (zh/en/ja/ko/yue). 5x faster than Whisper Small.",
+                languages = "zh/en/ja/ko/yue",
+                files = listOf(
+                    ModelFile("${SENSEVOICE_BASE_URL}model.int8.onnx", "model.int8.onnx"),
+                    ModelFile("${SENSEVOICE_BASE_URL}tokens.txt", "tokens.txt"),
+                )
+            ),
             // -- Whisper (whisper.cpp) --
             ModelInfo(
                 id = "whisper-tiny",
@@ -134,21 +149,6 @@ data class ModelInfo(
                 languages = "English",
                 files = moonshineFiles(MOONSHINE_BASE_BASE_URL)
             ),
-            // -- SenseVoice (sherpa-onnx) --
-            ModelInfo(
-                id = "sensevoice-small",
-                displayName = "SenseVoice Small",
-                engineType = EngineType.SHERPA_ONNX,
-                sherpaModelType = SherpaModelType.SENSE_VOICE,
-                parameterCount = "234M",
-                sizeOnDisk = "~240 MB",
-                description = "Multilingual (zh/en/ja/ko/yue). 5x faster than Whisper Small.",
-                languages = "zh/en/ja/ko/yue",
-                files = listOf(
-                    ModelFile("${SENSEVOICE_BASE_URL}model.int8.onnx", "model.int8.onnx"),
-                    ModelFile("${SENSEVOICE_BASE_URL}tokens.txt", "tokens.txt"),
-                )
-            ),
             // -- Omnilingual CTC (sherpa-onnx) --
             ModelInfo(
                 id = "omnilingual-300m",
@@ -192,7 +192,7 @@ data class ModelInfo(
             ),
         )
 
-        val defaultModel = availableModels.first { it.id == "whisper-base" }
+        val defaultModel = availableModels.first { it.id == "sensevoice-small" }
 
         /** Group models by engine for UI display. */
         val modelsByEngine: Map<EngineType, List<ModelInfo>>

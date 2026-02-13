@@ -14,10 +14,10 @@ class ModelInfoTest {
     }
 
     @Test
-    fun defaultModel_isWhisperBase() {
-        assertEquals("whisper-base", ModelInfo.defaultModel.id)
-        assertEquals("Whisper Base", ModelInfo.defaultModel.displayName)
-        assertEquals(EngineType.WHISPER_CPP, ModelInfo.defaultModel.engineType)
+    fun defaultModel_isSenseVoiceSmall() {
+        assertEquals("sensevoice-small", ModelInfo.defaultModel.id)
+        assertEquals("SenseVoice Small", ModelInfo.defaultModel.displayName)
+        assertEquals(EngineType.SHERPA_ONNX, ModelInfo.defaultModel.engineType)
     }
 
     @Test
