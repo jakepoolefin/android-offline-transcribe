@@ -15,6 +15,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
+#include <unistd.h>
+
+static double get_time_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
+}
 
 #ifdef __ANDROID__
 #include <dlfcn.h>
@@ -274,33 +282,95 @@ qwen_onnx_ctx_t *qwen_onnx_load(const char *model_dir) {
     ORT_CHECK_LOAD(api->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "qwen_onnx", &ctx->env));
     ORT_CHECK_LOAD(api->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &ctx->mem_info));
 
-    /* Session options — disable graph optimization for decoder (ORT optimizer bug) */
-    OrtSessionOptions *enc_opts, *dec_opts;
-    ORT_CHECK_LOAD(api->CreateSessionOptions(&enc_opts));
-    ORT_CHECK_LOAD(api->SetSessionGraphOptimizationLevel(enc_opts, ORT_ENABLE_BASIC));
-    ORT_CHECK_LOAD(api->SetIntraOpNumThreads(enc_opts, 4));
+    /* Session options: full parallelism for encoder, lower thread fanout for autoregressive decoder. */
+    int n_threads = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (n_threads < 1) n_threads = 4;
+    if (n_threads > 8) n_threads = 8;
+    int enc_threads = n_threads;
+    int dec_threads = (n_threads > 4) ? 4 : n_threads;
+    if (dec_threads < 1) dec_threads = 1;
+    ONNX_LOGI("qwen_onnx: threads enc=%d dec=%d\n", enc_threads, dec_threads);
 
-    ORT_CHECK_LOAD(api->CreateSessionOptions(&dec_opts));
-    ORT_CHECK_LOAD(api->SetSessionGraphOptimizationLevel(dec_opts, ORT_DISABLE_ALL));
-    ORT_CHECK_LOAD(api->SetIntraOpNumThreads(dec_opts, 4));
-
-    /* Load encoder */
+    /* Load encoder (try ORT_ENABLE_ALL, then ORT_DISABLE_ALL) */
     const char *enc_path = find_model(model_dir, "encoder.onnx");
     ONNX_LOGI("Loading encoder: %s\n", enc_path);
-    ORT_CHECK_LOAD(api->CreateSession(ctx->env, enc_path, enc_opts, &ctx->encoder));
+    {
+        GraphOptimizationLevel enc_levels[] = { ORT_ENABLE_ALL, ORT_DISABLE_ALL };
+        int loaded = 0;
+        for (int i = 0; i < 2 && !loaded; i++) {
+            OrtSessionOptions *opts = NULL;
+            ORT_CHECK_LOAD(api->CreateSessionOptions(&opts));
+            api->SetSessionGraphOptimizationLevel(opts, enc_levels[i]);
+            api->SetIntraOpNumThreads(opts, enc_threads);
+            api->SetInterOpNumThreads(opts, 1);
+            ONNX_LOGI("  Trying opt=%d ...\n", (int)enc_levels[i]);
+            OrtStatus *s = api->CreateSession(ctx->env, enc_path, opts, &ctx->encoder);
+            api->ReleaseSessionOptions(opts);
+            if (!s) {
+                ONNX_LOGI("  Loaded OK (opt=%d)\n", (int)enc_levels[i]);
+                loaded = 1;
+            } else {
+                const char *m = api->GetErrorMessage(s);
+                ONNX_LOGE("  Failed (opt=%d): %s\n", (int)enc_levels[i], m);
+                api->ReleaseStatus(s);
+            }
+        }
+        if (!loaded) { ONNX_LOGE("All opt levels failed for encoder\n"); qwen_onnx_free(ctx); return NULL; }
+    }
 
-    /* Load decoder prefill */
+    /* Load decoder prefill (try ORT_ENABLE_BASIC, then ORT_DISABLE_ALL) */
     const char *pf_path = find_model(model_dir, "decoder_prefill.onnx");
     ONNX_LOGI("Loading decoder prefill: %s\n", pf_path);
-    ORT_CHECK_LOAD(api->CreateSession(ctx->env, pf_path, dec_opts, &ctx->prefill));
+    {
+        GraphOptimizationLevel dec_levels[] = { ORT_ENABLE_BASIC, ORT_DISABLE_ALL };
+        int loaded = 0;
+        for (int i = 0; i < 2 && !loaded; i++) {
+            OrtSessionOptions *opts = NULL;
+            ORT_CHECK_LOAD(api->CreateSessionOptions(&opts));
+            api->SetSessionGraphOptimizationLevel(opts, dec_levels[i]);
+            api->SetIntraOpNumThreads(opts, dec_threads);
+            api->SetInterOpNumThreads(opts, 1);
+            ONNX_LOGI("  Trying opt=%d ...\n", (int)dec_levels[i]);
+            OrtStatus *s = api->CreateSession(ctx->env, pf_path, opts, &ctx->prefill);
+            api->ReleaseSessionOptions(opts);
+            if (!s) {
+                ONNX_LOGI("  Loaded OK (opt=%d)\n", (int)dec_levels[i]);
+                loaded = 1;
+            } else {
+                const char *m = api->GetErrorMessage(s);
+                ONNX_LOGE("  Failed (opt=%d): %s\n", (int)dec_levels[i], m);
+                api->ReleaseStatus(s);
+            }
+        }
+        if (!loaded) { ONNX_LOGE("All opt levels failed for decoder_prefill\n"); qwen_onnx_free(ctx); return NULL; }
+    }
 
-    /* Load decoder decode */
+    /* Load decoder decode (try ORT_ENABLE_BASIC, then ORT_DISABLE_ALL) */
     const char *dc_path = find_model(model_dir, "decoder_decode.onnx");
     ONNX_LOGI("Loading decoder decode: %s\n", dc_path);
-    ORT_CHECK_LOAD(api->CreateSession(ctx->env, dc_path, dec_opts, &ctx->decode));
-
-    api->ReleaseSessionOptions(enc_opts);
-    api->ReleaseSessionOptions(dec_opts);
+    {
+        GraphOptimizationLevel dec_levels[] = { ORT_ENABLE_BASIC, ORT_DISABLE_ALL };
+        int loaded = 0;
+        for (int i = 0; i < 2 && !loaded; i++) {
+            OrtSessionOptions *opts = NULL;
+            ORT_CHECK_LOAD(api->CreateSessionOptions(&opts));
+            api->SetSessionGraphOptimizationLevel(opts, dec_levels[i]);
+            api->SetIntraOpNumThreads(opts, dec_threads);
+            api->SetInterOpNumThreads(opts, 1);
+            ONNX_LOGI("  Trying opt=%d ...\n", (int)dec_levels[i]);
+            OrtStatus *s = api->CreateSession(ctx->env, dc_path, opts, &ctx->decode);
+            api->ReleaseSessionOptions(opts);
+            if (!s) {
+                ONNX_LOGI("  Loaded OK (opt=%d)\n", (int)dec_levels[i]);
+                loaded = 1;
+            } else {
+                const char *m = api->GetErrorMessage(s);
+                ONNX_LOGE("  Failed (opt=%d): %s\n", (int)dec_levels[i], m);
+                api->ReleaseStatus(s);
+            }
+        }
+        if (!loaded) { ONNX_LOGE("All opt levels failed for decoder_decode\n"); qwen_onnx_free(ctx); return NULL; }
+    }
 
     /* Load token embeddings */
     char *embed_path = path_join(model_dir, "embed_tokens.fp16.npy");
@@ -378,6 +448,8 @@ char *qwen_onnx_transcribe(qwen_onnx_ctx_t *ctx, const float *samples, int n_sam
     OrtValue *decode_token_input = NULL, *decode_pos_input = NULL;
     OrtValue **decode_outputs = NULL;
     OrtValue **kv_caches = NULL;  /* 2 * n_layers OrtValue pointers */
+    float *decode_token_buf = NULL;
+    int64_t decode_pos_val = 0;
     float *input_embeds = NULL;
     int *generated = NULL;
 
@@ -392,10 +464,14 @@ char *qwen_onnx_transcribe(qwen_onnx_ctx_t *ctx, const float *samples, int n_sam
     generated       = (int *)malloc(MAX_NEW_TOKENS * sizeof(int));
     if (!prefill_outputs || !decode_outputs || !kv_caches || !generated) goto cleanup;
 
+    double t_start = get_time_ms();
+
     /* ---- Step 1: Mel spectrogram ---- */
     int n_frames;
     float *mel = qwen_mel_spectrogram(samples, n_samples, &n_frames);
     if (!mel) { ONNX_LOGE("qwen_onnx: mel spectrogram failed\n"); goto cleanup; }
+    double t_mel = get_time_ms();
+    ONNX_LOGI("[QwenOnnx] mel spectrogram: %.1f ms\n", t_mel - t_start);
 
     /* Pad frames to multiple of CHUNK_SIZE */
     int pad_frames = (CHUNK_SIZE - (n_frames % CHUNK_SIZE)) % CHUNK_SIZE;
@@ -424,6 +500,8 @@ char *qwen_onnx_transcribe(qwen_onnx_ctx_t *ctx, const float *samples, int n_sam
         enc_output = enc_outputs[0];
     }
     free(mel); mel = NULL;
+    double t_encoder = get_time_ms();
+    ONNX_LOGI("[QwenOnnx] encoder: %.1f ms\n", t_encoder - t_mel);
 
     /* Get audio embedding shape */
     OrtTensorTypeAndShapeInfo *enc_info;
@@ -480,6 +558,8 @@ char *qwen_onnx_transcribe(qwen_onnx_ctx_t *ctx, const float *samples, int n_sam
         ORT_CHECK(api->Run(ctx->prefill, NULL, pf_in_names, (const OrtValue *const *)pf_inputs, 1,
                   pf_out_names, prefill_n_outputs, prefill_outputs));
     }
+    double t_prefill = get_time_ms();
+    ONNX_LOGI("[QwenOnnx] prefill: %.1f ms\n", t_prefill - t_encoder);
 
     /* Extract first token from prefill logits */
     {
@@ -530,25 +610,25 @@ char *qwen_onnx_transcribe(qwen_onnx_ctx_t *ctx, const float *samples, int n_sam
             dc_out_names[1 + n_layers + i] = out_name_bufs[1 + n_layers + i];
         }
 
+        /* Reuse decode input tensors across all steps to avoid per-token OrtValue creation overhead. */
+        int64_t tok_shape[] = {1, 1, hidden};
+        int64_t pos_shape[] = {1};
+        decode_token_buf = (float *)malloc((size_t)hidden * sizeof(float));
+        if (!decode_token_buf) goto cleanup;
+        ORT_CHECK(api->CreateTensorWithDataAsOrtValue(ctx->mem_info, decode_token_buf,
+                  (size_t)hidden * sizeof(float), tok_shape, 3,
+                  ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &decode_token_input));
+        ORT_CHECK(api->CreateTensorWithDataAsOrtValue(ctx->mem_info, &decode_pos_val,
+                  sizeof(int64_t), pos_shape, 1,
+                  ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &decode_pos_input));
+
         for (int step = 0; step < MAX_NEW_TOKENS - 1; step++) {
             if (is_eos(token)) break;
 
-            /* Create token embedding tensor */
-            float *tok_emb = ctx->embed_tokens + (size_t)token * hidden;
-            int64_t tok_shape[] = {1, 1, hidden};
-
-            if (decode_token_input) { api->ReleaseValue(decode_token_input); decode_token_input = NULL; }
-            ORT_CHECK(api->CreateTensorWithDataAsOrtValue(ctx->mem_info, tok_emb,
-                      hidden * sizeof(float), tok_shape, 3,
-                      ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &decode_token_input));
-
-            /* Create position tensor */
-            int64_t pos_val = (int64_t)(prompt_len + step);
-            int64_t pos_shape[] = {1};
-            if (decode_pos_input) { api->ReleaseValue(decode_pos_input); decode_pos_input = NULL; }
-            ORT_CHECK(api->CreateTensorWithDataAsOrtValue(ctx->mem_info, &pos_val,
-                      sizeof(int64_t), pos_shape, 1,
-                      ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &decode_pos_input));
+            memcpy(decode_token_buf,
+                   ctx->embed_tokens + (size_t)token * hidden,
+                   (size_t)hidden * sizeof(float));
+            decode_pos_val = (int64_t)(prompt_len + step);
 
             /* Build input array: [token_embed, position, k_0..k_n, v_0..v_n] */
             OrtValue *dc_inputs[2 + MAX_DEC_LAYERS * 2];
@@ -580,6 +660,11 @@ char *qwen_onnx_transcribe(qwen_onnx_ctx_t *ctx, const float *samples, int n_sam
             decode_outputs[0] = NULL;
         }
 
+        double t_decode = get_time_ms();
+        ONNX_LOGI("[QwenOnnx] decode loop: %.1f ms (%d tokens, %.1f ms/token)\n",
+                t_decode - t_prefill, n_generated, (t_decode - t_prefill) / (n_generated > 0 ? n_generated : 1));
+        ONNX_LOGI("[QwenOnnx] TOTAL inference: %.1f ms (%.2f audio sec)\n",
+                t_decode - t_start, n_samples / 16000.0);
         ONNX_LOGI("Generated %d tokens\n", n_generated);
 
         /* Strip trailing EOS tokens */
@@ -670,6 +755,7 @@ cleanup:
             if (kv_caches[i]) api->ReleaseValue(kv_caches[i]);
         free(kv_caches);
     }
+    free(decode_token_buf);
     free(input_embeds);
     free(generated);
     return result;

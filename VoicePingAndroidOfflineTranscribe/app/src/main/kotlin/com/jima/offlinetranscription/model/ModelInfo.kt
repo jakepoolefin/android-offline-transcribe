@@ -1,8 +1,8 @@
 package com.voiceping.offlinetranscription.model
 
-enum class EngineType { WHISPER_CPP, SHERPA_ONNX, SHERPA_ONNX_STREAMING, CACTUS, QWEN_ASR, QWEN_ONNX }
-enum class SherpaModelType { MOONSHINE, SENSE_VOICE, ZIPFORMER_TRANSDUCER, OMNILINGUAL_CTC }
-enum class CactusModelType { WHISPER, MOONSHINE }
+enum class EngineType { SHERPA_ONNX, SHERPA_ONNX_STREAMING, CACTUS, QWEN_ASR, QWEN_ONNX, ANDROID_SPEECH }
+enum class SherpaModelType { WHISPER, MOONSHINE, SENSE_VOICE, ZIPFORMER_TRANSDUCER, OMNILINGUAL_CTC }
+enum class CactusModelType { WHISPER }
 
 data class ModelFile(val url: String, val localName: String)
 
@@ -20,17 +20,29 @@ data class ModelInfo(
 ) {
     val inferenceMethod: String
         get() = when (engineType) {
-            EngineType.WHISPER_CPP -> "whisper.cpp (C++/JNI)"
             EngineType.SHERPA_ONNX -> "sherpa-onnx offline (ONNX Runtime)"
             EngineType.SHERPA_ONNX_STREAMING -> "sherpa-onnx streaming (ONNX Runtime)"
-            EngineType.CACTUS -> "Cactus (ARM SIMD)"
+            EngineType.CACTUS -> "whisper.cpp (GGML)"
             EngineType.QWEN_ASR -> "qwen-asr (Pure C/NEON)"
             EngineType.QWEN_ONNX -> "QwenASR (ONNX Runtime)"
+            EngineType.ANDROID_SPEECH -> "Android SpeechRecognizer"
         }
 
     companion object {
-        private const val WHISPER_BASE_URL =
-            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
+        private const val WHISPER_TINY_BASE_URL =
+            "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/main/"
+
+        private const val WHISPER_BASE_BASE_URL =
+            "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/"
+
+        private const val WHISPER_BASE_EN_BASE_URL =
+            "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base.en/resolve/main/"
+
+        private const val WHISPER_SMALL_BASE_URL =
+            "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/"
+
+        private const val WHISPER_TURBO_BASE_URL =
+            "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/"
 
         private const val MOONSHINE_TINY_BASE_URL =
             "https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-tiny-en-int8/resolve/main/"
@@ -52,6 +64,19 @@ data class ModelInfo(
 
         private const val QWEN_ASR_ONNX_BASE_URL =
             "https://huggingface.co/jima/qwen3-asr-0.6b-onnx-int8/resolve/main/"
+
+        private const val WHISPER_GGML_BASE_URL =
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
+
+        private val LEGACY_MODEL_ID_MAP = mapOf<String, String>(
+            // Both Qwen CPU and ONNX cards are kept as reference — no remapping
+        )
+
+        private fun whisperFiles(baseUrl: String, prefix: String) = listOf(
+            ModelFile("${baseUrl}${prefix}-encoder.int8.onnx", "encoder.int8.onnx"),
+            ModelFile("${baseUrl}${prefix}-decoder.int8.onnx", "decoder.int8.onnx"),
+            ModelFile("${baseUrl}${prefix}-tokens.txt", "tokens.txt"),
+        )
 
         private fun moonshineFiles(baseUrl: String) = listOf(
             ModelFile("${baseUrl}preprocess.onnx", "preprocess.onnx"),
@@ -77,65 +102,57 @@ data class ModelInfo(
                     ModelFile("${SENSEVOICE_BASE_URL}tokens.txt", "tokens.txt"),
                 )
             ),
-            // -- Whisper (whisper.cpp) --
+            // -- Whisper (sherpa-onnx ONNX) --
             ModelInfo(
                 id = "whisper-tiny",
                 displayName = "Whisper Tiny",
-                engineType = EngineType.WHISPER_CPP,
+                engineType = EngineType.SHERPA_ONNX,
+                sherpaModelType = SherpaModelType.WHISPER,
                 parameterCount = "39M",
-                sizeOnDisk = "~80 MB",
-                description = "Fastest, lower accuracy. Good for quick notes.",
-                files = listOf(ModelFile("${WHISPER_BASE_URL}ggml-tiny.bin", "ggml-tiny.bin"))
+                sizeOnDisk = "~100 MB",
+                description = "Fastest Whisper model. Good for quick notes.",
+                files = whisperFiles(WHISPER_TINY_BASE_URL, "tiny")
             ),
             ModelInfo(
                 id = "whisper-base",
                 displayName = "Whisper Base",
-                engineType = EngineType.WHISPER_CPP,
+                engineType = EngineType.SHERPA_ONNX,
+                sherpaModelType = SherpaModelType.WHISPER,
                 parameterCount = "74M",
-                sizeOnDisk = "~150 MB",
-                description = "Balanced speed and accuracy. Recommended.",
-                files = listOf(ModelFile("${WHISPER_BASE_URL}ggml-base.bin", "ggml-base.bin"))
+                sizeOnDisk = "~160 MB",
+                description = "Balanced speed and accuracy.",
+                files = whisperFiles(WHISPER_BASE_BASE_URL, "base")
             ),
             ModelInfo(
                 id = "whisper-base-en",
                 displayName = "Whisper Base (.en)",
-                engineType = EngineType.WHISPER_CPP,
+                engineType = EngineType.SHERPA_ONNX,
+                sherpaModelType = SherpaModelType.WHISPER,
                 parameterCount = "74M",
-                sizeOnDisk = "~150 MB",
+                sizeOnDisk = "~160 MB",
                 description = "English-only base model with lower decoding overhead.",
                 languages = "English",
-                files = listOf(ModelFile("${WHISPER_BASE_URL}ggml-base.en.bin", "ggml-base.en.bin"))
+                files = whisperFiles(WHISPER_BASE_EN_BASE_URL, "base.en")
             ),
             ModelInfo(
                 id = "whisper-small",
                 displayName = "Whisper Small",
-                engineType = EngineType.WHISPER_CPP,
+                engineType = EngineType.SHERPA_ONNX,
+                sherpaModelType = SherpaModelType.WHISPER,
                 parameterCount = "244M",
-                sizeOnDisk = "~500 MB",
-                description = "Higher accuracy, slower. Best for important recordings.",
-                files = listOf(ModelFile("${WHISPER_BASE_URL}ggml-small.bin", "ggml-small.bin"))
+                sizeOnDisk = "~490 MB",
+                description = "Higher accuracy. Best for important recordings.",
+                files = whisperFiles(WHISPER_SMALL_BASE_URL, "small")
             ),
             ModelInfo(
                 id = "whisper-large-v3-turbo",
-                displayName = "Whisper Large V3 Turbo",
-                engineType = EngineType.WHISPER_CPP,
+                displayName = "Whisper Turbo",
+                engineType = EngineType.SHERPA_ONNX,
+                sherpaModelType = SherpaModelType.WHISPER,
                 parameterCount = "809M",
-                sizeOnDisk = "~834 MB",
-                description = "Best accuracy. Uses q8_0 fallback on Android for emulator stability.",
-                files = listOf(
-                    ModelFile("${WHISPER_BASE_URL}ggml-large-v3-turbo-q8_0.bin", "ggml-large-v3-turbo-q8_0.bin")
-                )
-            ),
-            ModelInfo(
-                id = "whisper-large-v3-turbo-compressed",
-                displayName = "Whisper Large V3 Turbo (Compressed)",
-                engineType = EngineType.WHISPER_CPP,
-                parameterCount = "809M",
-                sizeOnDisk = "~834 MB",
-                description = "Quantized q8_0 Turbo. Smaller download, near-turbo quality.",
-                files = listOf(
-                    ModelFile("${WHISPER_BASE_URL}ggml-large-v3-turbo-q8_0.bin", "ggml-large-v3-turbo-q8_0.bin")
-                )
+                sizeOnDisk = "~1.0 GB",
+                description = "Best accuracy. INT8 quantized ONNX for fast inference.",
+                files = whisperFiles(WHISPER_TURBO_BASE_URL, "turbo")
             ),
             // -- Moonshine (sherpa-onnx) --
             ModelInfo(
@@ -201,32 +218,23 @@ data class ModelInfo(
                     ModelFile("${ZIPFORMER_EN_BASE_URL}tokens.txt", "tokens.txt"),
                 )
             ),
-            // -- Cactus Engine --
+            // -- whisper.cpp (GGML, direct inference matching iOS CactusKit) --
             ModelInfo(
                 id = "cactus-whisper-tiny",
-                displayName = "Whisper Tiny (Cactus)",
+                displayName = "Whisper Tiny (whisper.cpp)",
                 engineType = EngineType.CACTUS,
                 cactusModelType = CactusModelType.WHISPER,
                 parameterCount = "39M",
-                sizeOnDisk = "~75 MB",
-                description = "Whisper Tiny via energy-efficient Cactus ARM SIMD engine.",
-                files = emptyList() // Cactus manages its own model downloads
+                sizeOnDisk = "~31 MB",
+                description = "Whisper Tiny via whisper.cpp GGML. Q5_1 quantized, matching iOS.",
+                files = listOf(
+                    ModelFile("${WHISPER_GGML_BASE_URL}ggml-tiny-q5_1.bin", "ggml-tiny-q5_1.bin")
+                )
             ),
-            ModelInfo(
-                id = "cactus-moonshine-base",
-                displayName = "Moonshine Base (Cactus)",
-                engineType = EngineType.CACTUS,
-                cactusModelType = CactusModelType.MOONSHINE,
-                parameterCount = "62M",
-                sizeOnDisk = "~145 MB",
-                description = "Moonshine Base via energy-efficient Cactus ARM SIMD engine.",
-                languages = "English",
-                files = emptyList() // Cactus manages its own model downloads
-            ),
-            // -- Qwen ASR (pure C inference) --
+            // -- Qwen ASR (Pure C/NEON) --
             ModelInfo(
                 id = "qwen3-asr-0.6b",
-                displayName = "Qwen3 ASR 0.6B",
+                displayName = "Qwen3 ASR 0.6B (CPU)",
                 engineType = EngineType.QWEN_ASR,
                 parameterCount = "600M",
                 sizeOnDisk = "~1.8 GB",
@@ -259,9 +267,36 @@ data class ModelInfo(
                     ModelFile("${QWEN_ASR_ONNX_BASE_URL}tokens.json", "tokens.json"),
                 )
             ),
+            // -- Android Native Speech --
+            ModelInfo(
+                id = "android-speech-offline",
+                displayName = "Android Speech (Offline)",
+                engineType = EngineType.ANDROID_SPEECH,
+                parameterCount = "System",
+                sizeOnDisk = "Built-in",
+                description = "Android's built-in on-device speech recognition. No download. API 33+ for file transcription.",
+                languages = "50+ languages",
+                files = emptyList()
+            ),
+            ModelInfo(
+                id = "android-speech-online",
+                displayName = "Android Speech (Online)",
+                engineType = EngineType.ANDROID_SPEECH,
+                parameterCount = "System",
+                sizeOnDisk = "Built-in",
+                description = "Android's cloud speech recognition via Google. Requires internet. API 33+ for file transcription.",
+                languages = "100+ languages",
+                files = emptyList()
+            ),
         )
 
         val defaultModel = availableModels.first { it.id == "sensevoice-small" }
+
+        fun findByIdOrLegacy(id: String?): ModelInfo? {
+            if (id.isNullOrBlank()) return null
+            val canonicalId = LEGACY_MODEL_ID_MAP[id] ?: id
+            return availableModels.firstOrNull { it.id == canonicalId }
+        }
 
         /** Group models by engine for UI display. */
         val modelsByEngine: Map<EngineType, List<ModelInfo>>

@@ -31,12 +31,17 @@ ALL_MODELS=(
     "whisper-base-en"
     "whisper-small"
     "whisper-large-v3-turbo"
-    "whisper-large-v3-turbo-compressed"
     "moonshine-tiny"
     "moonshine-base"
     "sensevoice-small"
     "omnilingual-300m"
     "zipformer-20m"
+    "cactus-whisper-tiny"
+    "cactus-moonshine-base"
+    "qwen3-asr-0.6b"
+    "qwen3-asr-0.6b-onnx"
+    "android-speech-offline"
+    "android-speech-online"
 )
 
 # Map model-id to test method name
@@ -47,12 +52,17 @@ TEST_METHODS=(
     whisper-base-en test_whisperBaseEn
     whisper-small test_whisperSmall
     whisper-large-v3-turbo test_whisperLargeV3Turbo
-    whisper-large-v3-turbo-compressed test_whisperLargeV3TurboCompressed
     moonshine-tiny test_moonshineTiny
     moonshine-base test_moonshineBase
     sensevoice-small test_sensevoiceSmall
     omnilingual-300m test_omnilingual300m
     zipformer-20m test_zipformer20m
+    cactus-whisper-tiny test_cactusWhisperTiny
+    cactus-moonshine-base test_cactusMoonshineBase
+    qwen3-asr-0.6b test_qwen3Asr06bCpu
+    qwen3-asr-0.6b-onnx test_qwen3Asr06bOnnx
+    android-speech-offline test_androidSpeechOffline
+    android-speech-online test_androidSpeechOnline
 )
 
 # Use provided models or all
@@ -64,7 +74,7 @@ fi
 
 echo "=== Android E2E Test Suite ==="
 echo "Models to test: ${MODELS[*]}"
-echo "Large whisper variants are excluded from default emulator E2E due prohibitive runtime."
+echo "Note: very large models can take a long time on older phones, especially on first download."
 echo "Audio fixture: $WAV_SOURCE"
 echo "Per-model timeout: ${INSTRUMENT_TIMEOUT_SEC}s"
 echo "Evidence directory: $EVIDENCE_DIR"
@@ -99,13 +109,16 @@ echo ""
 
 PASS_COUNT=0
 FAIL_COUNT=0
+SKIP_COUNT=0
 
 instrument_timeout_for_model() {
     local model_id="$1"
     case "$model_id" in
-        whisper-large-v3-turbo|whisper-large-v3-turbo-compressed) echo 3600 ;;
+        whisper-large-v3-turbo) echo 3600 ;;
         whisper-small) echo 2400 ;;
-        omnilingual-300m) echo 1200 ;;
+        qwen3-asr-0.6b|qwen3-asr-0.6b-onnx) echo 7200 ;;
+        cactus-whisper-tiny|cactus-moonshine-base) echo 1800 ;;
+        omnilingual-300m) echo 2400 ;;
         whisper-base|whisper-base-en) echo 1200 ;;
         *) echo "$INSTRUMENT_TIMEOUT_SEC" ;;
     esac
@@ -195,13 +208,17 @@ for MODEL_ID in "${MODELS[@]}"; do
     # Check result.json (may be in subdir if adb pull created one)
     RESULT_FILE="$MODEL_DIR/result.json"
     if [ -f "$RESULT_FILE" ]; then
-        PASS=$(python3 -c "import json; r=json.load(open('$RESULT_FILE')); print('PASS' if r['pass'] else 'FAIL')" 2>/dev/null || echo "UNKNOWN")
+        STATUS=$(python3 -c "import json; r=json.load(open('$RESULT_FILE')); print('SKIP' if r.get('skipped', False) else ('PASS' if r.get('pass', False) else 'FAIL'))" 2>/dev/null || echo "UNKNOWN")
         TRANSCRIPT=$(python3 -c "import json; r=json.load(open('$RESULT_FILE')); print(r.get('transcript','')[:80])" 2>/dev/null || echo "")
         DURATION=$(python3 -c "import json; r=json.load(open('$RESULT_FILE')); print(f\"{r.get('duration_ms',0):.0f}ms\")" 2>/dev/null || echo "")
 
-        if [ "$PASS" = "PASS" ]; then
+        if [ "$STATUS" = "PASS" ]; then
             PASS_COUNT=$((PASS_COUNT + 1))
             echo "  PASS ($DURATION) - $TRANSCRIPT"
+        elif [ "$STATUS" = "SKIP" ]; then
+            SKIP_COUNT=$((SKIP_COUNT + 1))
+            REASON=$(python3 -c "import json; r=json.load(open('$RESULT_FILE')); print((r.get('error','') or '')[:80])" 2>/dev/null || echo "")
+            echo "  SKIP - $REASON"
         else
             FAIL_COUNT=$((FAIL_COUNT + 1))
             echo "  FAIL ($DURATION) - $TRANSCRIPT"
@@ -219,7 +236,7 @@ done
 
 # Generate summary report
 echo "=== E2E Test Summary ==="
-echo "Total: ${#MODELS[@]} | Pass: $PASS_COUNT | Fail: $FAIL_COUNT"
+echo "Total: ${#MODELS[@]} | Pass: $PASS_COUNT | Fail: $FAIL_COUNT | Skip: $SKIP_COUNT"
 echo ""
 
 # Generate audit report
@@ -239,7 +256,10 @@ import json
 r = json.load(open('$RESULT_FILE'))
 model = r.get('model_id', '$MODEL_ID')
 engine = r.get('engine', 'unknown')
-p = 'PASS' if r.get('pass', False) else 'FAIL'
+if r.get('skipped', False):
+    p = 'SKIP'
+else:
+    p = 'PASS' if r.get('pass', False) else 'FAIL'
 d = f\"{r.get('duration_ms', 0):.0f}ms\"
 t = r.get('transcript', '')[:60].replace('|', '\\|')
 err = r.get('error', '')

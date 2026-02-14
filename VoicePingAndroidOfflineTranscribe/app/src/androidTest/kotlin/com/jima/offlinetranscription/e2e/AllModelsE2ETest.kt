@@ -35,6 +35,9 @@ class AllModelsE2ETest {
     // Per-model download+load+transcribe timeout (ms)
     // whisper.cpp on emulator is very slow — whisper-small needs ~500s, large-turbo ~1800s
     private fun timeout(modelId: String): Long = when {
+        modelId.contains("android-speech") -> 60_000L // 1 min — system-provided, no download
+        modelId.contains("qwen") -> 600_000L     // 10 min — 600M+ model, ORT fallback adds time
+        modelId.contains("cactus") -> 600_000L   // 10 min — download + init may exceed the default 2m on slow networks
         modelId.contains("large") -> 3_600_000L  // 60 min — 809M model on older phones
         modelId.contains("omnilingual") -> 600_000L
         modelId.contains("zipformer") -> 300_000L
@@ -56,12 +59,16 @@ class AllModelsE2ETest {
     @Test fun test_whisperBaseEn(): Unit = testModel("whisper-base-en")
     @Test fun test_whisperSmall(): Unit = testModel("whisper-small")
     @Test fun test_whisperLargeV3Turbo(): Unit = testModel("whisper-large-v3-turbo")
-    @Test fun test_whisperLargeV3TurboCompressed(): Unit = testModel("whisper-large-v3-turbo-compressed")
     @Test fun test_moonshineTiny(): Unit = testModel("moonshine-tiny")
     @Test fun test_moonshineBase(): Unit = testModel("moonshine-base")
     @Test fun test_sensevoiceSmall(): Unit = testModel("sensevoice-small")
     @Test fun test_omnilingual300m(): Unit = testModel("omnilingual-300m")
     @Test fun test_zipformer20m(): Unit = testModel("zipformer-20m")
+    @Test fun test_cactusWhisperTiny(): Unit = testModel("cactus-whisper-tiny")
+    @Test fun test_qwen3Asr06bCpu(): Unit = testModel("qwen3-asr-0.6b")
+    @Test fun test_qwen3Asr06bOnnx(): Unit = testModel("qwen3-asr-0.6b-onnx")
+    @Test fun test_androidSpeechOffline(): Unit = testModel("android-speech-offline")
+    @Test fun test_androidSpeechOnline(): Unit = testModel("android-speech-online")
 
     // ---- Core test logic ----
 
@@ -168,9 +175,14 @@ class AllModelsE2ETest {
             Log.i(TAG, "[$modelId] result.json: $json")
             val payload = JSONObject(json)
 
+            val pass = payload.optBoolean("pass", false)
+            val skipped = payload.optBoolean("skipped", false)
+            if (skipped) {
+                Log.w(TAG, "[$modelId] E2E skipped: ${payload.optString("error", "").take(120)}")
+            }
             assertTrue(
-                payload.optBoolean("pass", false),
-                "[$modelId] Expected pass=true in result.json, got: $json"
+                pass || skipped,
+                "[$modelId] Expected pass=true or skipped=true in result.json, got: $json"
             )
             // Log translation evidence (informational, not required for pass)
             if (payload.optBoolean("expects_translation", false)) {

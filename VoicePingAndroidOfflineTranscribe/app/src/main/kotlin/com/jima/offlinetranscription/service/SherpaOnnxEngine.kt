@@ -8,6 +8,7 @@ import com.k2fsa.sherpa.onnx.OfflineOmnilingualAsrCtcModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OfflineSenseVoiceModelConfig
+import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig
 import com.voiceping.offlinetranscription.model.SherpaModelType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,7 +17,7 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 /**
- * ASR engine backed by sherpa-onnx for Moonshine, SenseVoice, and Omnilingual models.
+ * ASR engine backed by sherpa-onnx for Whisper, Moonshine, SenseVoice, and Omnilingual models.
  * Expects a model directory containing the required ONNX files + tokens.txt.
  *
  * All access to [recognizer] is guarded by [lock] so that release()
@@ -174,6 +175,18 @@ class SherpaOnnxEngine(
         val tokensPath = File(modelDir, "tokens.txt").absolutePath
 
         val modelConfig = when (modelType) {
+            SherpaModelType.WHISPER -> OfflineModelConfig(
+                whisper = OfflineWhisperModelConfig(
+                    encoder = findFile(modelDir, "encoder"),
+                    decoder = findFile(modelDir, "decoder"),
+                    language = "",  // empty = auto-detect; "auto" is invalid for sherpa-onnx Whisper
+                    task = "transcribe",
+                ),
+                tokens = tokensPath,
+                numThreads = threads,
+                debug = false,
+                provider = provider,
+            )
             SherpaModelType.MOONSHINE -> OfflineModelConfig(
                 moonshine = OfflineMoonshineModelConfig(
                     preprocessor = File(modelDir, "preprocess.onnx").absolutePath,
@@ -205,9 +218,11 @@ class SherpaOnnxEngine(
                     model = findFile(modelDir, "model"),
                 ),
                 tokens = tokensPath,
-                numThreads = threads,
+                numThreads = 1,  // Single-thread for deterministic CTC decode (matches iOS)
                 debug = false,
                 provider = provider,
+                // Note: iOS sets modelingUnit="bpe" but it causes native crash on Android AAR v1.12.23.
+                // The MMS CTC omnilingual model has limited English capability on both platforms.
             )
         }
 

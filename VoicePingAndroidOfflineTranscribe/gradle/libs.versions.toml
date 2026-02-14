@@ -13,7 +13,6 @@ mlkit-translate = "17.0.3"
 junit = "4.13.2"
 activity = "1.9.3"
 core-ktx = "1.15.0"
-cactus = "1.4.1-beta"
 
 [libraries]
 # AndroidX Core
@@ -54,7 +53,6 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 kotlin-test = { group = "org.jetbrains.kotlin", name = "kotlin-test", version.ref = "kotlin" }
 kotlin-test-junit = { group = "org.jetbrains.kotlin", name = "kotlin-test-junit", version.ref = "kotlin" }
 mlkit-translate = { group = "com.google.mlkit", name = "translate", version.ref = "mlkit-translate" }
-cactus = { group = "com.cactuscompute", name = "cactus", version.ref = "cactus" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

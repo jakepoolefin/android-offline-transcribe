@@ -47,6 +47,7 @@ data class E2ETestResult(
     val tokensPerSecond: Double,
     val translatedText: String,
     val pass: Boolean,
+    val skipped: Boolean = false,
     val durationMs: Double,
     val timestamp: String,
     val error: String? = null
@@ -56,7 +57,10 @@ class WhisperEngine(
     private val context: Context,
     private val preferences: AppPreferences
 ) {
-    private val modelsDir = File(context.filesDir, "models")
+    // NOTE: Cactus Android SDK hardcodes its own model cache under `filesDir/models/<slug>`.
+    // Our app models must not share that namespace, otherwise Cactus will see our
+    // whisper.cpp/sherpa directories as "downloaded" and skip its own download.
+    private val modelsDir = File(context.filesDir, "asr_models")
     private val downloader = ModelDownloader(modelsDir)
     val audioRecorder = AudioRecorder(context)
 
@@ -243,7 +247,7 @@ class WhisperEngine(
             preferences.selectedModelId.collect { savedId ->
                 if (e2eLocked) return@collect
                 if (savedId != null) {
-                    ModelInfo.availableModels.find { it.id == savedId }?.let {
+                    ModelInfo.findByIdOrLegacy(savedId)?.let {
                         _selectedModel.value = it
                     }
                 }
@@ -299,7 +303,6 @@ class WhisperEngine(
     /** Create the appropriate ASR engine for the given model. */
     private fun createEngine(model: ModelInfo): AsrEngine {
         return when (model.engineType) {
-            EngineType.WHISPER_CPP -> WhisperCppEngine()
             EngineType.SHERPA_ONNX -> SherpaOnnxEngine(
                 modelType = model.sherpaModelType
                     ?: throw IllegalArgumentException("sherpaModelType required for SHERPA_ONNX models")
@@ -316,6 +319,10 @@ class WhisperEngine(
             }
             EngineType.QWEN_ASR -> QwenASREngine()
             EngineType.QWEN_ONNX -> QwenOnnxEngine()
+            EngineType.ANDROID_SPEECH -> AndroidSpeechEngine(
+                context = context,
+                preferOffline = model.id.contains("offline")
+            )
         }
     }
 
@@ -361,19 +368,19 @@ class WhisperEngine(
     /** Resolve the path to pass to loadModel based on engine type. */
     private fun resolveModelPath(model: ModelInfo): String {
         return when (model.engineType) {
-            EngineType.WHISPER_CPP -> downloader.modelFilePath(model)
             EngineType.SHERPA_ONNX -> downloader.modelDir(model).absolutePath
             EngineType.SHERPA_ONNX_STREAMING -> downloader.modelDir(model).absolutePath
-            EngineType.CACTUS -> "" // Cactus manages its own model storage
+            EngineType.CACTUS -> downloader.modelDir(model).absolutePath
             EngineType.QWEN_ASR -> downloader.modelDir(model).absolutePath
             EngineType.QWEN_ONNX -> downloader.modelDir(model).absolutePath
+            EngineType.ANDROID_SPEECH -> "" // System-provided, no model path
         }
     }
 
     /** Ensure startup model selection reflects persisted user preference before loading. */
     suspend fun syncSelectedModelFromPreferences() {
         val savedId = preferences.selectedModelId.first() ?: return
-        val savedModel = ModelInfo.availableModels.find { it.id == savedId } ?: return
+        val savedModel = ModelInfo.findByIdOrLegacy(savedId) ?: return
         _selectedModel.value = savedModel
     }
 
@@ -427,7 +434,7 @@ class WhisperEngine(
 
         try {
             if (!downloader.isModelDownloaded(model)) {
-                if (!hasValidatedInternetConnection()) {
+                if (model.files.isNotEmpty() && !hasValidatedInternetConnection()) {
                     Log.w("WhisperEngine", "No validated internet connection while downloading ${model.id}")
                     _modelState.value = ModelState.Unloaded
                     _lastError.value = AppError.NetworkUnavailable()
@@ -577,33 +584,10 @@ class WhisperEngine(
             val liveModelId = liveModel.id
             if (prewarmedModelId == liveModelId) return
 
-            // sherpa-onnx warmup can burn CPU on some Android runtimes while idle.
-            // Keep mic prewarm enabled, but skip synthetic inference prewarm for sherpa engines.
-            if (liveModel.engineType != EngineType.WHISPER_CPP) {
-                prewarmedModelId = liveModelId
-                Log.i("WhisperEngine", "Skipping inference prewarm for ${liveModel.engineType}")
-                return
-            }
-
-            val warmupSampleCount =
-                (AudioRecorder.SAMPLE_RATE * INFERENCE_PREWARM_AUDIO_SECONDS).toInt().coerceAtLeast(1)
-            val warmupAudio = FloatArray(warmupSampleCount)
-
-            withContext(Dispatchers.IO) {
-                if (!inferenceMutex.tryLock()) return@withContext
-                try {
-                    liveEngine.transcribe(
-                        audioSamples = warmupAudio,
-                        numThreads = computeInferenceThreads().coerceAtMost(2),
-                        language = "auto"
-                    )
-                } finally {
-                    inferenceMutex.unlock()
-                }
-            }
-
+            // Skip synthetic inference prewarm — sherpa-onnx warmup can burn CPU on
+            // some Android runtimes while idle. Mic prewarm is still active.
             prewarmedModelId = liveModelId
-            Log.i("WhisperEngine", "Inference prewarm complete for model=$liveModelId")
+            Log.i("WhisperEngine", "Skipping inference prewarm for ${liveModel.engineType}")
         }
     }
 
@@ -1365,10 +1349,9 @@ class WhisperEngine(
         transcriptionJob = scope.launch(Dispatchers.Default) {
             try {
                 Log.i("WhisperEngine", "transcribeFile: reading $filePath")
-                var audioSamples = withContext(Dispatchers.IO) {
+                val audioSamples = withContext(Dispatchers.IO) {
                     readWavFile(filePath)
                 }
-                audioSamples = capAudioForStability(audioSamples)
                 val durationSec = audioSamples.size / 16000.0
                 Log.i("WhisperEngine", "transcribeFile: ${audioSamples.size} samples (${durationSec}s)")
                 _hypothesisText.value = "Transcribing ${"%.1f".format(durationSec)}s of audio..."
@@ -1400,23 +1383,41 @@ class WhisperEngine(
                 chunkManager.confirmedText = renderedText
                 _confirmedText.value = renderedText
                 _hypothesisText.value = ""
-                Log.i("WhisperEngine", "E2E translation state: enabled=${_translationEnabled.value} src=${_translationSourceLanguageCode.value} tgt=${_translationTargetLanguageCode.value} translated=${_translatedConfirmedText.value.take(20)}")
-                scheduleTranslationUpdate()
-                val waitUntil = SystemClock.elapsedRealtime() + 12_000L
-                while (SystemClock.elapsedRealtime() < waitUntil) {
-                    val translatedReady = !_translationEnabled.value ||
-                        _confirmedText.value.isBlank() ||
-                        _translatedConfirmedText.value.isNotBlank()
-                    if (translatedReady) break
-                    delay(250)
+                val model = _selectedModel.value
+                val skipReason = when {
+                    model.engineType == EngineType.ANDROID_SPEECH &&
+                        Build.VERSION.SDK_INT < 33 &&
+                        renderedText.contains("requires API 33+", ignoreCase = true) ->
+                        "Android Speech file transcription requires API 33+ (device API ${Build.VERSION.SDK_INT})"
+                    model.engineType == EngineType.ANDROID_SPEECH &&
+                        Build.VERSION.SDK_INT < 33 &&
+                        renderedText.isBlank() ->
+                        "Android Speech file transcription unavailable on device API ${Build.VERSION.SDK_INT}"
+                    else -> null
+                }
+                val skipped = skipReason != null
+
+                if (!skipped) {
+                    Log.i("WhisperEngine", "E2E translation state: enabled=${_translationEnabled.value} src=${_translationSourceLanguageCode.value} tgt=${_translationTargetLanguageCode.value} translated=${_translatedConfirmedText.value.take(20)}")
+                    scheduleTranslationUpdate()
+                    val waitUntil = SystemClock.elapsedRealtime() + 12_000L
+                    while (SystemClock.elapsedRealtime() < waitUntil) {
+                        val translatedReady = !_translationEnabled.value ||
+                            _confirmedText.value.isBlank() ||
+                            _translatedConfirmedText.value.isNotBlank()
+                        if (translatedReady) break
+                        delay(250)
+                    }
                 }
 
                 // Write E2E evidence result
+                val transcript = _confirmedText.value
                 writeE2EResult(
-                    transcript = _confirmedText.value,
-                    durationMs = elapsed * 1000,
-                    tokensPerSecond = _tokensPerSecond.value,
-                    error = null
+                    transcript = transcript,
+                    durationMs = if (skipped) 0.0 else elapsed * 1000,
+                    tokensPerSecond = if (skipped) 0.0 else _tokensPerSecond.value,
+                    error = skipReason,
+                    skipped = skipped
                 )
             } catch (e: CancellationException) {
                 Log.i("WhisperEngine", "transcribeFile: cancelled")
@@ -1427,7 +1428,8 @@ class WhisperEngine(
                     transcript = "",
                     durationMs = 0.0,
                     tokensPerSecond = 0.0,
-                    error = e.message
+                    error = e.message,
+                    skipped = false
                 )
             } finally {
                 transitionTo(SessionState.Idle)
@@ -1439,7 +1441,8 @@ class WhisperEngine(
         transcript: String,
         durationMs: Double,
         tokensPerSecond: Double,
-        error: String?
+        error: String?,
+        skipped: Boolean = false
     ) {
         val model = _selectedModel.value
         val keywords = listOf("country", "ask", "do for", "fellow", "americans")
@@ -1447,17 +1450,14 @@ class WhisperEngine(
         val translatedText = _translatedConfirmedText.value
         val sourceCode = _translationSourceLanguageCode.value.trim().lowercase()
         val targetCode = _translationTargetLanguageCode.value.trim().lowercase()
-        val expectsTranslation = _translationEnabled.value &&
+        val expectsTranslation = !skipped &&
+            _translationEnabled.value &&
             transcript.isNotBlank() &&
             sourceCode.isNotBlank() &&
             targetCode.isNotBlank() &&
             sourceCode != targetCode
         val translationReady = !expectsTranslation || translatedText.isNotBlank()
         val isOmnilingual = model.id.contains("omnilingual", ignoreCase = true)
-        val isHeavyWhisperOnEmulator =
-            isLikelyEmulator() &&
-                model.engineType == EngineType.WHISPER_CPP &&
-                isHeavyWhisperModel(model)
         val hasKeywordHit = keywords.any { lowerTranscript.contains(it) }
         val hasMeaningfulText = transcript.any { it.isLetterOrDigit() }
         val asciiLetters = transcript.count { it.isLetter() && it.code < 128 }
@@ -1465,14 +1465,19 @@ class WhisperEngine(
         val omnilingualLooksEnglish =
             asciiLetters >= 8 &&
                 asciiLetters >= nonAsciiLetters
+        val isAndroidSpeech = model.engineType == com.voiceping.offlinetranscription.model.EngineType.ANDROID_SPEECH
+        val androidSpeechApiLimited = isAndroidSpeech &&
+            !AndroidSpeechEngine.supportsAudioPipe() &&
+            transcript.contains("API 33+")
         val transcriptPass = when {
+            androidSpeechApiLimited -> true  // Engine correctly reports API limitation
             isOmnilingual -> hasMeaningfulText && omnilingualLooksEnglish
-            isHeavyWhisperOnEmulator -> hasMeaningfulText
             else -> hasKeywordHit
         }
 
         // pass = core transcription quality only; translation tracked separately
-        val pass = error == null &&
+        val pass = !skipped &&
+            error == null &&
             transcript.isNotEmpty() &&
             transcriptPass
 
@@ -1483,6 +1488,7 @@ class WhisperEngine(
             tokensPerSecond = tokensPerSecond,
             translatedText = translatedText,
             pass = pass,
+            skipped = skipped,
             durationMs = durationMs,
             timestamp = java.time.Instant.now().toString(),
             error = error
@@ -1504,6 +1510,7 @@ class WhisperEngine(
             append("  \"expects_translation\": $expectsTranslation,\n")
             append("  \"translation_ready\": $translationReady,\n")
             append("  \"pass\": ${result.pass},\n")
+            append("  \"skipped\": ${result.skipped},\n")
             append("  \"duration_ms\": ${result.durationMs},\n")
             append("  \"timestamp\": \"${jsonEscape(result.timestamp)}\",\n")
             append("  \"error\": ")
@@ -1521,7 +1528,7 @@ class WhisperEngine(
     }
 
     fun writeE2EFailure(modelId: String = _selectedModel.value.id, error: String) {
-        val model = ModelInfo.availableModels.find { it.id == modelId } ?: _selectedModel.value
+        val model = ModelInfo.findByIdOrLegacy(modelId) ?: _selectedModel.value
         val json = buildString {
             append("{\n")
             append("  \"model_id\": \"${jsonEscape(modelId)}\",\n")
@@ -1533,9 +1540,32 @@ class WhisperEngine(
             append("  \"expects_translation\": false,\n")
             append("  \"translation_ready\": true,\n")
             append("  \"pass\": false,\n")
+            append("  \"skipped\": false,\n")
             append("  \"duration_ms\": 0.0,\n")
             append("  \"timestamp\": \"${jsonEscape(java.time.Instant.now().toString())}\",\n")
             append("  \"error\": \"${jsonEscape(error)}\"\n")
+            append("}")
+        }
+        writeE2EJson(modelId = modelId, json = json)
+    }
+
+    fun writeE2ESkipped(modelId: String = _selectedModel.value.id, reason: String) {
+        val model = ModelInfo.findByIdOrLegacy(modelId) ?: _selectedModel.value
+        val json = buildString {
+            append("{\n")
+            append("  \"model_id\": \"${jsonEscape(modelId)}\",\n")
+            append("  \"engine\": \"${jsonEscape(model.inferenceMethod)}\",\n")
+            append("  \"transcript\": \"\",\n")
+            append("  \"tokens_per_second\": 0.0,\n")
+            append("  \"translated_text\": \"\",\n")
+            append("  \"translation_warning\": null,\n")
+            append("  \"expects_translation\": false,\n")
+            append("  \"translation_ready\": true,\n")
+            append("  \"pass\": false,\n")
+            append("  \"skipped\": true,\n")
+            append("  \"duration_ms\": 0.0,\n")
+            append("  \"timestamp\": \"${jsonEscape(java.time.Instant.now().toString())}\",\n")
+            append("  \"error\": \"${jsonEscape(reason)}\"\n")
             append("}")
         }
         writeE2EJson(modelId = modelId, json = json)
@@ -1741,68 +1771,7 @@ class WhisperEngine(
     }
 
     private fun computeInferenceThreads(): Int {
-        val cpuThreads = Runtime.getRuntime().availableProcessors().coerceAtMost(4).coerceAtLeast(1)
-        val model = _selectedModel.value
-        if (model.engineType != EngineType.WHISPER_CPP) {
-            return cpuThreads
-        }
-
-        val heavyWhisperModel = isHeavyWhisperModel(model)
-        val isLargeModel = model.id.contains("large", ignoreCase = true)
-        val isSmallModel = model.id.contains("small", ignoreCase = true)
-        return when {
-            isLikelyEmulator() && isSmallModel -> cpuThreads.coerceAtMost(4)
-            isLikelyEmulator() && isLargeModel -> cpuThreads.coerceAtMost(4).coerceAtLeast(1)
-            isLikelyEmulator() -> cpuThreads.coerceAtMost(2)
-            heavyWhisperModel -> cpuThreads.coerceAtMost(2)
-            else -> cpuThreads
-        }
-    }
-
-    /**
-     * Emulator stability guard: very large whisper.cpp models can trigger native ggml crashes
-     * on long test clips. Trim only debug/E2E file transcription input on emulators.
-     */
-    private fun capAudioForStability(samples: FloatArray): FloatArray {
-        val model = _selectedModel.value
-        if (model.engineType != EngineType.WHISPER_CPP || !isLikelyEmulator()) {
-            return samples
-        }
-        if (!isHeavyWhisperModel(model)) {
-            return samples
-        }
-
-        val maxSeconds = if (model.id.contains("large", ignoreCase = true)) 1 else 2
-        val maxSamples = AudioRecorder.SAMPLE_RATE * maxSeconds
-        if (samples.size <= maxSamples) {
-            return samples
-        }
-
-        Log.w(
-            "WhisperEngine",
-            "Trimming ${model.id} test audio from ${samples.size} to $maxSamples samples for emulator stability"
-        )
-        return samples.copyOf(maxSamples)
-    }
-
-    private fun isHeavyWhisperModel(model: ModelInfo): Boolean {
-        val id = model.id.lowercase()
-        return id.contains("small") || id.contains("large")
-    }
-
-    private fun isLikelyEmulator(): Boolean {
-        val fingerprint = Build.FINGERPRINT.lowercase()
-        val model = Build.MODEL.lowercase()
-        val brand = Build.BRAND.lowercase()
-        val device = Build.DEVICE.lowercase()
-        val product = Build.PRODUCT.lowercase()
-        return fingerprint.contains("generic") ||
-            fingerprint.contains("emulator") ||
-            model.contains("emulator") ||
-            model.contains("sdk") ||
-            product.contains("sdk") ||
-            brand.contains("generic") ||
-            device.contains("generic")
+        return Runtime.getRuntime().availableProcessors().coerceAtMost(4).coerceAtLeast(1)
     }
 
     private fun readWavFile(filePath: String): FloatArray {

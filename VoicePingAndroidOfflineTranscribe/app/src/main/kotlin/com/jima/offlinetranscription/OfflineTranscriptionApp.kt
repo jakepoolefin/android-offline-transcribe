@@ -1,13 +1,46 @@
 package com.voiceping.offlinetranscription
 
 import android.app.Application
-import android.os.Build
 import android.util.Log
-import com.cactus.CactusContextInitializer
 import com.voiceping.offlinetranscription.data.AppPreferences
+import com.voiceping.offlinetranscription.model.ModelInfo
 import com.voiceping.offlinetranscription.service.WhisperEngine
+import java.io.File
 
 class OfflineTranscriptionApp : Application() {
+    companion object {
+        private const val TAG = "OfflineTranscriptionApp"
+        private const val LEGACY_MODELS_DIR_NAME = "models"    // Old model cache path
+        private const val APP_MODELS_DIR_NAME = "asr_models"   // Current model cache
+    }
+
+    /**
+     * Migrate model dirs from legacy `filesDir/models/` to `filesDir/asr_models/`.
+     * This was originally needed for Cactus SDK compatibility; kept for one-time migration
+     * of existing installations.
+     */
+    private fun migrateModelCacheIfNeeded() {
+        val oldBase = File(filesDir, LEGACY_MODELS_DIR_NAME)
+        if (!oldBase.exists() || !oldBase.isDirectory) return
+
+        val newBase = File(filesDir, APP_MODELS_DIR_NAME)
+        if (!newBase.exists()) newBase.mkdirs()
+
+        val modelIds = ModelInfo.availableModels.map { it.id }.toSet()
+        for (id in modelIds) {
+            val src = File(oldBase, id)
+            if (!src.exists() || !src.isDirectory) continue
+
+            val dst = File(newBase, id)
+            if (dst.exists()) continue
+
+            if (!src.renameTo(dst)) {
+                Log.w(TAG, "Failed to migrate model dir: ${src.absolutePath} -> ${dst.absolutePath}")
+            } else {
+                Log.i(TAG, "Migrated model dir: $id")
+            }
+        }
+    }
 
     lateinit var preferences: AppPreferences
         private set
@@ -17,17 +50,7 @@ class OfflineTranscriptionApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        // Cactus 1.4.1-beta ships arm64-v8a native libs only.
-        // Keep app startup safe on x86_64 emulators by initializing conditionally.
-        if (Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }) {
-            try {
-                CactusContextInitializer.initialize(this)
-            } catch (e: Throwable) {
-                Log.w("OfflineTranscriptionApp", "Cactus initialization failed", e)
-            }
-        } else {
-            Log.i("OfflineTranscriptionApp", "Skipping Cactus init on ABI: ${Build.SUPPORTED_ABIS.joinToString()}")
-        }
+        migrateModelCacheIfNeeded()
         preferences = AppPreferences(this)
         whisperEngine = WhisperEngine(this, preferences)
     }

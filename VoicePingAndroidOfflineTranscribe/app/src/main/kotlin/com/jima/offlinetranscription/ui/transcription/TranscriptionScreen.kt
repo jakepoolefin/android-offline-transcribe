@@ -733,6 +733,22 @@ private fun SettingsBottomSheet(
 
 @Composable
 private fun E2EEvidenceOverlay(result: E2ETestResult) {
+    val statusLabel = when {
+        result.skipped -> "UNSUPPORTED"
+        result.pass -> "PASS"
+        else -> "FAIL"
+    }
+    val statusBg = when {
+        result.skipped -> MaterialTheme.colorScheme.secondaryContainer
+        result.pass -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.error
+    }
+    val statusFg = when {
+        result.skipped -> MaterialTheme.colorScheme.onSecondaryContainer
+        result.pass -> MaterialTheme.colorScheme.onPrimary
+        else -> MaterialTheme.colorScheme.onError
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -753,16 +769,12 @@ private fun E2EEvidenceOverlay(result: E2ETestResult) {
                 fontFamily = FontFamily.Monospace
             )
             Text(
-                text = if (result.pass) "PASS" else "FAIL",
+                text = statusLabel,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (result.pass) MaterialTheme.colorScheme.onPrimary
-                else MaterialTheme.colorScheme.onError,
+                color = statusFg,
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        if (result.pass) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.error
-                    )
+                    .background(statusBg)
                     .padding(horizontal = 8.dp, vertical = 2.dp)
             )
         }
@@ -791,6 +803,14 @@ private fun E2EEvidenceOverlay(result: E2ETestResult) {
             fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (result.skipped && !result.error.isNullOrBlank()) {
+            Text(
+                text = "Reason: ${result.error.take(120)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2
+            )
+        }
         if (result.transcript.isNotEmpty()) {
             Text(
                 text = result.transcript.take(120),

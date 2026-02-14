@@ -87,9 +87,6 @@ dependencies {
     // sherpa-onnx (offline ASR: Moonshine, SenseVoice)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 
-    // Cactus (on-device ASR: Whisper, Moonshine via ARM SIMD)
-    implementation(libs.cactus)
-
     // Google ML Kit Translation (offline)
     implementation(libs.mlkit.translate)
 

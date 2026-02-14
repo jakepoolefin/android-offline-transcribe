@@ -33,7 +33,7 @@ class AllModelsTranscribeTest {
     @Before
     fun setUp() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        modelsDir = File(ctx.filesDir, "models")
+        modelsDir = File(ctx.filesDir, "asr_models")
         downloader = ModelDownloader(modelsDir)
     }
 
@@ -59,9 +59,6 @@ class AllModelsTranscribeTest {
 
     @Test
     fun test_whisperLargeV3Turbo() = testModel("whisper-large-v3-turbo")
-
-    @Test
-    fun test_whisperLargeV3TurboCompressed() = testModel("whisper-large-v3-turbo-compressed")
 
     @Test
     fun test_moonshineTiny() = testModel("moonshine-tiny")
@@ -137,7 +134,6 @@ class AllModelsTranscribeTest {
 
     private fun createEngine(model: ModelInfo): AsrEngine {
         return when (model.engineType) {
-            EngineType.WHISPER_CPP -> WhisperCppEngine()
             EngineType.SHERPA_ONNX -> SherpaOnnxEngine(
                 modelType = model.sherpaModelType!!
             )
@@ -146,19 +142,23 @@ class AllModelsTranscribeTest {
                 cactusModelType = model.cactusModelType
                     ?: error("cactusModelType is required for CACTUS models")
             )
-            EngineType.QWEN_ASR -> QwenASREngine()
             EngineType.QWEN_ONNX -> QwenOnnxEngine()
+            EngineType.QWEN_ASR -> QwenASREngine()
+            EngineType.ANDROID_SPEECH -> AndroidSpeechEngine(
+                context = InstrumentationRegistry.getInstrumentation().targetContext,
+                preferOffline = model.id.contains("offline")
+            )
         }
     }
 
     private fun resolveModelPath(model: ModelInfo): String {
         return when (model.engineType) {
-            EngineType.WHISPER_CPP -> downloader.modelFilePath(model)
             EngineType.SHERPA_ONNX -> downloader.modelDir(model).absolutePath
             EngineType.SHERPA_ONNX_STREAMING -> downloader.modelDir(model).absolutePath
-            EngineType.CACTUS -> "" // Cactus manages its own local model storage.
-            EngineType.QWEN_ASR -> downloader.modelDir(model).absolutePath
+            EngineType.CACTUS -> downloader.modelDir(model).absolutePath
             EngineType.QWEN_ONNX -> downloader.modelDir(model).absolutePath
+            EngineType.QWEN_ASR -> downloader.modelDir(model).absolutePath
+            EngineType.ANDROID_SPEECH -> "" // System-provided
         }
     }
 

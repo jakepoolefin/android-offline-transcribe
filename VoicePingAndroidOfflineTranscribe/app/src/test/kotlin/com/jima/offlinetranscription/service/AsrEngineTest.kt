@@ -48,15 +48,6 @@ class AsrEngineTest {
     // -- Engine type to model mapping --
 
     @Test
-    fun allWhisperCppModels_haveNullSherpaModelType() {
-        ModelInfo.availableModels
-            .filter { it.engineType == EngineType.WHISPER_CPP }
-            .forEach { model ->
-                assertEquals(null, model.sherpaModelType, "whisper.cpp model ${model.id} should have null sherpaModelType")
-            }
-    }
-
-    @Test
     fun allSherpaOnnxModels_haveNonNullSherpaModelType() {
         ModelInfo.availableModels
             .filter { it.engineType == EngineType.SHERPA_ONNX }
@@ -68,12 +59,12 @@ class AsrEngineTest {
     @Test
     fun engineTypes_coverAllModels() {
         val validTypes = setOf(
-            EngineType.WHISPER_CPP,
             EngineType.SHERPA_ONNX,
             EngineType.SHERPA_ONNX_STREAMING,
             EngineType.CACTUS,
             EngineType.QWEN_ASR,
-            EngineType.QWEN_ONNX
+            EngineType.QWEN_ONNX,
+            EngineType.ANDROID_SPEECH
         )
         ModelInfo.availableModels.forEach { model ->
             assertTrue(
@@ -140,14 +131,18 @@ class AsrEngineTest {
     // -- Model-to-engine resolution --
 
     @Test
-    fun whisperCppModels_shouldUseWhisperCppEngine() {
-        val whisperModels = ModelInfo.availableModels.filter { it.engineType == EngineType.WHISPER_CPP }
-        assertTrue(whisperModels.isNotEmpty(), "Should have at least one WHISPER_CPP model")
+    fun whisperModels_shouldUseSherpaOnnxWhisperType() {
+        val whisperModels = ModelInfo.availableModels.filter {
+            it.id.startsWith("whisper-") && it.engineType == EngineType.SHERPA_ONNX
+        }
+        assertTrue(whisperModels.isNotEmpty(), "Should have at least one Whisper model")
         whisperModels.forEach { model ->
-            assertEquals(EngineType.WHISPER_CPP, model.engineType)
-            // These models have single .bin files
-            assertEquals(1, model.files.size, "${model.id} should have single file")
-            assertTrue(model.files.first().localName.endsWith(".bin"))
+            assertEquals(SherpaModelType.WHISPER, model.sherpaModelType)
+            // Whisper ONNX models have 3 files: encoder, decoder, tokens
+            assertEquals(3, model.files.size, "${model.id} should have 3 files")
+            assertTrue(model.files.any { it.localName.contains("encoder") && it.localName.endsWith(".onnx") })
+            assertTrue(model.files.any { it.localName.contains("decoder") && it.localName.endsWith(".onnx") })
+            assertTrue(model.files.any { it.localName == "tokens.txt" })
         }
     }
 

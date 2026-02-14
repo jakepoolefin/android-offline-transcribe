@@ -20,11 +20,12 @@ class ModelDownloaderTest {
     private val singleFileModel = ModelInfo(
         id = "whisper-test",
         displayName = "Whisper Test",
-        engineType = EngineType.WHISPER_CPP,
+        engineType = EngineType.SHERPA_ONNX,
+        sherpaModelType = SherpaModelType.WHISPER,
         parameterCount = "39M",
         sizeOnDisk = "~80 MB",
         description = "Test model",
-        files = listOf(ModelFile("https://example.com/ggml-tiny.bin", "ggml-tiny.bin"))
+        files = listOf(ModelFile("https://example.com/encoder.int8.onnx", "encoder.int8.onnx"))
     )
 
     private val multiFileModel = ModelInfo(
@@ -86,7 +87,7 @@ class ModelDownloaderTest {
     @Test
     fun modelFilePath_returnsPathToFirstFile() {
         val path = downloader.modelFilePath(singleFileModel)
-        assertTrue(path.endsWith("whisper-test/ggml-tiny.bin"), "Expected path ending with whisper-test/ggml-tiny.bin but got $path")
+        assertTrue(path.endsWith("whisper-test/encoder.int8.onnx"), "Expected path ending with whisper-test/encoder.int8.onnx but got $path")
     }
 
     @Test
@@ -106,7 +107,7 @@ class ModelDownloaderTest {
     fun isModelDownloaded_returnsTrue_whenSingleFileExists() {
         val dir = File(tempDir, "whisper-test")
         dir.mkdirs()
-        File(dir, "ggml-tiny.bin").writeText("fake model data")
+        File(dir, "encoder.int8.onnx").writeText("fake model data")
 
         assertTrue(downloader.isModelDownloaded(singleFileModel))
     }
@@ -140,7 +141,7 @@ class ModelDownloaderTest {
         val dir = File(tempDir, "whisper-test")
         dir.mkdirs()
         // Only a .tmp file exists, not the final file
-        File(dir, "ggml-tiny.bin.tmp").writeText("incomplete data")
+        File(dir, "encoder.int8.onnx.tmp").writeText("incomplete data")
 
         assertFalse(downloader.isModelDownloaded(singleFileModel))
     }

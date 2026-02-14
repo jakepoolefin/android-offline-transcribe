@@ -21,6 +21,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 class MainActivity : ComponentActivity() {
     private fun e2eLoadTimeoutMs(modelId: String): Long = when {
+        modelId.contains("android-speech") -> 120_000L
+        modelId.contains("qwen") -> 1_200_000L
+        modelId.contains("cactus") -> 600_000L
         modelId.contains("large") -> 1_200_000L
         modelId.contains("omnilingual") -> 600_000L
         modelId.contains("small") -> 1_200_000L
@@ -45,7 +48,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     if (isE2E && e2eModelId != null) {
                         // E2E test mode: select specific model, download, load, transcribe
-                        val model = ModelInfo.availableModels.find { it.id == e2eModelId }
+                        val model = ModelInfo.findByIdOrLegacy(e2eModelId)
                         if (model != null) {
                             Log.i("E2E", "Auto-test mode: selecting $e2eModelId")
                             // Lock E2E state to prevent DataStore collectors from

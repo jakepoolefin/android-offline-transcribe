@@ -1,30 +1,9 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(whisper_jni)
+project(native_engines)
 
-set(WHISPER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../whisper.cpp)
+set(CMAKE_CXX_STANDARD 17)
 
-# Build whisper.cpp as a library
-set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
-
-add_subdirectory(${WHISPER_DIR} ${CMAKE_CURRENT_BINARY_DIR}/whisper.cpp)
-
-# Build JNI bridge
-add_library(whisper_jni SHARED whisper_jni.cpp)
-
-target_include_directories(whisper_jni PRIVATE
-    ${WHISPER_DIR}/include
-    ${WHISPER_DIR}/ggml/include
-)
-
-target_link_libraries(whisper_jni
-    whisper
-    log
-)
-
-# ---- Qwen ASR library ----
+# ---- Qwen ASR core library (mel spectrogram + tokenizer, used by ONNX engine) ----
 set(QWEN_ASR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../qwen-asr)
 
 add_library(qwen_asr STATIC
@@ -46,7 +25,7 @@ target_compile_options(qwen_asr PRIVATE
     -O3 -ffast-math
 )
 
-# Build Qwen ASR JNI bridge
+# ---- Qwen ASR JNI (Pure C/NEON inference) ----
 add_library(qwen_asr_jni SHARED qwen_asr_jni.cpp)
 
 target_include_directories(qwen_asr_jni PRIVATE ${QWEN_ASR_DIR})
@@ -80,5 +59,45 @@ target_link_libraries(qwen_onnx_jni
     qwen_asr_onnx
     qwen_asr          # for mel spectrogram + tokenizer
     dl                 # for dlopen/dlsym (loads libonnxruntime.so at runtime)
+    log
+)
+
+# ---- whisper.cpp (direct GGML inference, matching iOS CactusKit approach) ----
+set(WHISPER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../whisper.cpp)
+
+include(FetchContent)
+FetchContent_Declare(ggml SOURCE_DIR ${WHISPER_DIR}/ggml)
+FetchContent_MakeAvailable(ggml)
+
+add_library(whisper_lib STATIC
+    ${WHISPER_DIR}/src/whisper.cpp
+)
+
+target_include_directories(whisper_lib PUBLIC
+    ${WHISPER_DIR}/include
+    ${WHISPER_DIR}/src
+    ${WHISPER_DIR}/ggml/include
+    ${WHISPER_DIR}/ggml/src
+    ${WHISPER_DIR}/ggml/src/ggml-cpu
+)
+
+target_compile_definitions(whisper_lib PUBLIC GGML_USE_CPU)
+target_compile_definitions(whisper_lib PRIVATE WHISPER_VERSION="1.8.3")
+target_compile_options(whisper_lib PRIVATE -O3)
+target_link_libraries(whisper_lib PUBLIC ggml)
+
+find_package(Threads REQUIRED)
+target_link_libraries(whisper_lib PUBLIC Threads::Threads)
+
+# ---- Whisper JNI bridge ----
+add_library(whisper_jni SHARED whisper_jni.c)
+
+target_include_directories(whisper_jni PRIVATE
+    ${WHISPER_DIR}/include
+)
+
+target_link_libraries(whisper_jni
+    whisper_lib
+    android
     log
 )

@@ -2,13 +2,6 @@
 # ProGuard / R8 rules for OfflineTranscription
 # ============================================================
 
-# ----------------------------------------------------------
-# JNI: whisper.cpp native methods
-# ----------------------------------------------------------
-# The native library calls into WhisperLib by exact method name,
-# so every member must survive shrinking and renaming.
--keep class com.voiceping.offlinetranscription.service.WhisperLib { *; }
-
 # Generic safety net: keep any class that declares a native method
 -keepclasseswithmembernames class * {
     native <methods>;
@@ -60,12 +53,9 @@
 -dontwarn com.k2fsa.sherpa.onnx.**
 
 # ----------------------------------------------------------
-# Cactus: on-device ASR (JNA + native libcactus.so)
+# whisper.cpp JNI (used by CactusEngine for GGML inference)
 # ----------------------------------------------------------
--keep class com.cactus.** { *; }
--dontwarn com.cactus.**
--keep class net.java.dev.jna.** { *; }
--dontwarn net.java.dev.jna.**
+-keep class com.voiceping.offlinetranscription.service.WhisperCppLib { *; }
 
 # ----------------------------------------------------------
 # Kotlin & Coroutines

@@ -2,54 +2,35 @@ package com.voiceping.offlinetranscription.service
 
 import android.os.Build
 import android.util.Log
-import com.cactus.CactusInitParams
-import com.cactus.CactusSTT
-import com.cactus.CactusTranscriptionParams
-import com.cactus.TranscriptionMode
 import com.voiceping.offlinetranscription.model.CactusModelType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
- * ASR engine backed by Cactus (ARM SIMD).
- * Supports Whisper and Moonshine models via the CactusSTT API.
+ * ASR engine backed by whisper.cpp (GGML) via JNI.
+ * Matches the iOS CactusKit approach: direct whisper.cpp inference
+ * with quantized GGML model files (.bin).
  *
- * Cactus manages its own model downloads and storage internally,
- * so the standard [ModelDownloader] flow is bypassed for this engine.
- * Audio is converted from Float32 [-1,1] to 16-bit PCM ByteArray before
- * passing to the Cactus transcribe API.
+ * Audio is passed as Float32 [-1,1] directly to whisper_full().
+ * Model files (.bin) are downloaded via the standard [ModelDownloader] flow.
  */
 class CactusEngine(
     private val cactusModelType: CactusModelType
 ) : AsrEngine {
     companion object {
         private const val TAG = "CactusEngine"
-        private const val MIN_PCM16_BYTES = 32000
+        private const val MIN_SAMPLES = 16000 // 1 second at 16kHz
 
         internal fun isRuntimeSupported(): Boolean {
-            return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
-        }
-
-        /**
-         * Convert Float32 audio samples [-1,1] to 16-bit PCM ByteArray (little-endian).
-         * Cactus expects 16-bit PCM, 16kHz, mono, minimum 32,000 bytes (~1 second).
-         */
-        internal fun float32ToPcm16(samples: FloatArray): ByteArray {
-            val bytes = ByteArray(samples.size * 2)
-            for (i in samples.indices) {
-                val clamped = samples[i].coerceIn(-1f, 1f)
-                val s = (clamped * 32767f).toInt().toShort()
-                bytes[i * 2] = (s.toInt() and 0xFF).toByte()
-                bytes[i * 2 + 1] = (s.toInt() shr 8 and 0xFF).toByte()
-            }
-            return bytes
+            return Build.SUPPORTED_ABIS?.any { it == "arm64-v8a" } == true
         }
     }
 
-    private var stt: CactusSTT? = null
+    private var contextPtr: Long = 0
     private val mutex = Mutex()
     @Volatile
     private var loaded: Boolean = false
@@ -60,39 +41,38 @@ class CactusEngine(
         return withContext(Dispatchers.IO) {
             mutex.withLock {
                 if (!isRuntimeSupported()) {
-                    Log.e(TAG, "Cactus is unsupported on this ABI: ${Build.SUPPORTED_ABIS.joinToString()}")
+                    Log.e(TAG, "whisper.cpp requires arm64-v8a: ${Build.SUPPORTED_ABIS.joinToString()}")
                     return@withContext false
                 }
                 try {
-                    stt?.reset()
-                    stt = null
-                    loaded = false
-
-                    val instance = CactusSTT()
-                    val modelName = cactusModelName()
-
-                    // Download if not already cached by Cactus
-                    if (!instance.isModelDownloaded(modelName)) {
-                        Log.i(TAG, "Downloading Cactus model: $modelName")
-                        instance.downloadModel(modelName)
+                    // Release previous context
+                    if (contextPtr != 0L) {
+                        WhisperCppLib.freeContext(contextPtr)
+                        contextPtr = 0
+                        loaded = false
                     }
 
-                    // Initialize the model
-                    Log.i(TAG, "Initializing Cactus model: $modelName")
-                    instance.initializeModel(CactusInitParams(model = modelName))
-
-                    if (!instance.isReady()) {
-                        Log.e(TAG, "Cactus model not ready after initialization: $modelName")
+                    // Find the .bin model file in the model directory
+                    val binFile = findModelBin(modelPath)
+                    if (binFile == null) {
+                        Log.e(TAG, "No .bin model file found in: $modelPath")
                         return@withContext false
                     }
 
-                    stt = instance
+                    Log.i(TAG, "Loading whisper.cpp model: ${binFile.absolutePath}")
+                    val ptr = WhisperCppLib.initContext(binFile.absolutePath)
+                    if (ptr == 0L) {
+                        Log.e(TAG, "whisper_init_from_file failed for: ${binFile.name}")
+                        return@withContext false
+                    }
+
+                    contextPtr = ptr
                     loaded = true
-                    Log.i(TAG, "Loaded Cactus model: $modelName")
+                    Log.i(TAG, "Loaded whisper.cpp model: ${binFile.name} (sysinfo: ${WhisperCppLib.getSystemInfo()})")
                     true
                 } catch (e: Throwable) {
-                    Log.e(TAG, "Failed to load Cactus model", e)
-                    stt = null
+                    Log.e(TAG, "Failed to load whisper.cpp model", e)
+                    contextPtr = 0
                     loaded = false
                     false
                 }
@@ -107,41 +87,45 @@ class CactusEngine(
     ): List<TranscriptionSegment> {
         return withContext(Dispatchers.IO) {
             mutex.withLock {
-                val instance = stt ?: return@withContext emptyList()
+                val ptr = contextPtr
+                if (ptr == 0L) return@withContext emptyList()
                 try {
-                    // Convert Float32 [-1,1] to 16-bit PCM ByteArray (little-endian, 16kHz mono)
-                    val pcmBytes = float32ToPcm16(audioSamples)
-                    if (pcmBytes.size < MIN_PCM16_BYTES) {
+                    if (audioSamples.size < MIN_SAMPLES) {
                         return@withContext emptyList()
                     }
 
-                    val result = instance.transcribe(
-                        filePath = "",
-                        prompt = "",
-                        params = CactusTranscriptionParams(),
-                        onToken = null,
-                        mode = TranscriptionMode.LOCAL,
-                        apiKey = null,
-                        audioBuffer = pcmBytes
+                    // Pass Float32 samples directly to whisper.cpp (same as iOS CactusKit)
+                    val result = WhisperCppLib.fullTranscribe(
+                        ptr,
+                        numThreads,
+                        audioSamples,
+                        language.ifBlank { "en" }
                     )
 
-                    if (result?.success == true) {
-                        val text = result.text?.trim() ?: ""
-                        if (text.isBlank()) return@withContext emptyList()
-                        val durationMs = (audioSamples.size.toLong() * 1000) / 16000
-                        listOf(
-                            TranscriptionSegment(
-                                text = text,
-                                startMs = 0,
-                                endMs = durationMs
-                            )
-                        )
-                    } else {
-                        Log.w(TAG, "Cactus transcription failed: ${result?.errorMessage}")
-                        emptyList()
+                    if (result != 0) {
+                        Log.w(TAG, "whisper_full() returned error code: $result")
+                        return@withContext emptyList()
                     }
+
+                    val segmentCount = WhisperCppLib.getSegmentCount(ptr)
+                    if (segmentCount <= 0) return@withContext emptyList()
+
+                    val segments = mutableListOf<TranscriptionSegment>()
+                    for (i in 0 until segmentCount) {
+                        val text = WhisperCppLib.getSegmentText(ptr, i).trim()
+                        if (text.isBlank()) continue
+                        // whisper.cpp returns times in centiseconds (10ms units)
+                        val t0 = WhisperCppLib.getSegmentT0(ptr, i) * 10
+                        val t1 = WhisperCppLib.getSegmentT1(ptr, i) * 10
+                        segments.add(TranscriptionSegment(text = text, startMs = t0, endMs = t1))
+                    }
+
+                    if (segments.isEmpty()) return@withContext emptyList()
+
+                    Log.i(TAG, "Transcribed ${segments.size} segments, lang=${WhisperCppLib.getDetectedLanguage(ptr)}")
+                    segments
                 } catch (e: Throwable) {
-                    Log.e(TAG, "Cactus transcribe failed", e)
+                    Log.e(TAG, "whisper.cpp transcribe failed", e)
                     emptyList()
                 }
             }
@@ -153,18 +137,25 @@ class CactusEngine(
             mutex.withLock {
                 loaded = false
                 try {
-                    stt?.reset()
+                    if (contextPtr != 0L) {
+                        WhisperCppLib.freeContext(contextPtr)
+                    }
                 } catch (e: Throwable) {
-                    Log.w(TAG, "Failed to reset Cactus instance during release", e)
+                    Log.w(TAG, "Failed to free whisper.cpp context during release", e)
                 }
-                stt = null
+                contextPtr = 0
             }
         }
     }
 
-    /** Map CactusModelType enum to the Cactus model slug string. */
-    internal fun cactusModelName(): String = when (cactusModelType) {
-        CactusModelType.WHISPER -> "whisper-tiny"
-        CactusModelType.MOONSHINE -> "moonshine-base"
+    /** Find the .bin GGML model file in the given directory. */
+    private fun findModelBin(modelPath: String): File? {
+        val dir = File(modelPath)
+        if (!dir.isDirectory) {
+            // modelPath might be the file itself
+            if (dir.isFile && dir.name.endsWith(".bin")) return dir
+            return null
+        }
+        return dir.listFiles()?.firstOrNull { it.name.endsWith(".bin") }
     }
 }

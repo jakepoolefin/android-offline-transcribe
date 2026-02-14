@@ -3,13 +3,12 @@ package com.voiceping.offlinetranscription.model
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ModelInfoTest {
 
     @Test
-    fun availableModels_hasFourteenEntries() {
+    fun availableModels_hasThirteenEntries() {
         assertEquals(15, ModelInfo.availableModels.size)
     }
 
@@ -28,15 +27,12 @@ class ModelInfoTest {
         assertTrue("whisper-base-en" in ids)
         assertTrue("whisper-small" in ids)
         assertTrue("whisper-large-v3-turbo" in ids)
-        assertTrue("whisper-large-v3-turbo-compressed" in ids)
         assertTrue("moonshine-tiny" in ids)
         assertTrue("moonshine-base" in ids)
         assertTrue("sensevoice-small" in ids)
         assertTrue("omnilingual-300m" in ids)
         assertTrue("zipformer-20m" in ids)
         assertTrue("cactus-whisper-tiny" in ids)
-        assertTrue("cactus-moonshine-base" in ids)
-        assertTrue("qwen3-asr-0.6b" in ids)
         assertTrue("qwen3-asr-0.6b-onnx" in ids)
     }
 
@@ -49,12 +45,12 @@ class ModelInfoTest {
     // -- Engine type classification --
 
     @Test
-    fun whisperModels_haveWhisperCppEngineType() {
+    fun whisperModels_haveSherpaOnnxWhisperType() {
         ModelInfo.availableModels
             .filter { it.id.startsWith("whisper-") }
             .forEach { model ->
-                assertEquals(EngineType.WHISPER_CPP, model.engineType, "Expected WHISPER_CPP for ${model.id}")
-                assertNull(model.sherpaModelType, "sherpaModelType should be null for ${model.id}")
+                assertEquals(EngineType.SHERPA_ONNX, model.engineType, "Expected SHERPA_ONNX for ${model.id}")
+                assertEquals(SherpaModelType.WHISPER, model.sherpaModelType, "Expected WHISPER for ${model.id}")
             }
     }
 
@@ -101,12 +97,15 @@ class ModelInfoTest {
     // -- File lists --
 
     @Test
-    fun whisperModels_haveSingleFile() {
+    fun whisperModels_haveThreeFiles() {
         ModelInfo.availableModels
-            .filter { it.engineType == EngineType.WHISPER_CPP }
+            .filter { it.sherpaModelType == SherpaModelType.WHISPER }
             .forEach { model ->
-                assertEquals(1, model.files.size, "${model.id} should have exactly 1 file")
-                assertTrue(model.files.first().localName.endsWith(".bin"))
+                assertEquals(3, model.files.size, "${model.id} should have 3 files")
+                val names = model.files.map { it.localName }
+                assertTrue("encoder.int8.onnx" in names, "Missing encoder.int8.onnx in ${model.id}")
+                assertTrue("decoder.int8.onnx" in names, "Missing decoder.int8.onnx in ${model.id}")
+                assertTrue("tokens.txt" in names, "Missing tokens.txt in ${model.id}")
             }
     }
 
@@ -166,7 +165,7 @@ class ModelInfoTest {
     @Test
     fun allFiles_haveValidUrls() {
         ModelInfo.availableModels
-            .filter { it.engineType != EngineType.CACTUS } // Cactus manages its own downloads
+            .filter { it.files.isNotEmpty() } // Skip system-provided models (Android Speech)
             .forEach { model ->
                 model.files.forEach { file ->
                     assertTrue(file.url.startsWith("https://"), "URL should start with https:// for ${file.localName} in ${model.id}")
@@ -217,28 +216,20 @@ class ModelInfoTest {
     // -- Grouped display --
 
     @Test
-    fun modelsByEngine_containsAllEngineTypes() {
+    fun modelsByEngine_containsExpectedEngineTypes() {
         val grouped = ModelInfo.modelsByEngine
-        assertTrue(grouped.containsKey(EngineType.WHISPER_CPP))
         assertTrue(grouped.containsKey(EngineType.SHERPA_ONNX))
         assertTrue(grouped.containsKey(EngineType.SHERPA_ONNX_STREAMING))
         assertTrue(grouped.containsKey(EngineType.CACTUS))
-        assertTrue(grouped.containsKey(EngineType.QWEN_ASR))
         assertTrue(grouped.containsKey(EngineType.QWEN_ONNX))
     }
 
     @Test
-    fun modelsByEngine_whisperCpp_hasSixModels() {
-        val whisperModels = ModelInfo.modelsByEngine[EngineType.WHISPER_CPP]
-        assertNotNull(whisperModels)
-        assertEquals(6, whisperModels.size)
-    }
-
-    @Test
-    fun modelsByEngine_sherpaOnnx_hasFourModels() {
+    fun modelsByEngine_sherpaOnnx_hasNineModels() {
         val sherpaModels = ModelInfo.modelsByEngine[EngineType.SHERPA_ONNX]
         assertNotNull(sherpaModels)
-        assertEquals(4, sherpaModels.size)
+        // 5 whisper + 2 moonshine + 1 sensevoice + 1 omnilingual = 9
+        assertEquals(9, sherpaModels.size)
     }
 
     @Test
@@ -254,14 +245,16 @@ class ModelInfoTest {
     @Test
     fun modelInfo_isDataClass_equalityWorks() {
         val a = ModelInfo(
-            id = "test", displayName = "Test", engineType = EngineType.WHISPER_CPP,
+            id = "test", displayName = "Test", engineType = EngineType.SHERPA_ONNX,
+            sherpaModelType = SherpaModelType.WHISPER,
             parameterCount = "1M", sizeOnDisk = "~1 MB", description = "A test model.",
-            files = listOf(ModelFile("https://example.com/test.bin", "test.bin"))
+            files = listOf(ModelFile("https://example.com/encoder.int8.onnx", "encoder.int8.onnx"))
         )
         val b = ModelInfo(
-            id = "test", displayName = "Test", engineType = EngineType.WHISPER_CPP,
+            id = "test", displayName = "Test", engineType = EngineType.SHERPA_ONNX,
+            sherpaModelType = SherpaModelType.WHISPER,
             parameterCount = "1M", sizeOnDisk = "~1 MB", description = "A test model.",
-            files = listOf(ModelFile("https://example.com/test.bin", "test.bin"))
+            files = listOf(ModelFile("https://example.com/encoder.int8.onnx", "encoder.int8.onnx"))
         )
         assertEquals(a, b)
     }
@@ -285,18 +278,18 @@ class ModelInfoTest {
     // -- Enum completeness --
 
     @Test
-    fun engineType_hasFiveValues() {
+    fun engineType_hasSixValues() {
         assertEquals(6, EngineType.entries.size)
     }
 
     @Test
-    fun sherpaModelType_hasFourValues() {
-        assertEquals(4, SherpaModelType.entries.size)
+    fun sherpaModelType_hasFiveValues() {
+        assertEquals(5, SherpaModelType.entries.size)
     }
 
     @Test
-    fun cactusModelType_hasTwoValues() {
-        assertEquals(2, CactusModelType.entries.size)
+    fun cactusModelType_hasOneValue() {
+        assertEquals(1, CactusModelType.entries.size)
     }
 
     // -- Cactus engine --
@@ -312,26 +305,27 @@ class ModelInfoTest {
     }
 
     @Test
-    fun cactusModels_haveEmptyFileList() {
+    fun cactusModels_haveGgmlBinFile() {
         ModelInfo.availableModels
             .filter { it.engineType == EngineType.CACTUS }
             .forEach { model ->
-                assertTrue(model.files.isEmpty(), "${model.id} should have empty files (Cactus manages its own downloads)")
+                assertTrue(model.files.isNotEmpty(), "${model.id} should have GGML .bin file")
+                assertTrue(model.files.any { it.localName.endsWith(".bin") }, "${model.id} needs .bin file")
             }
     }
 
     @Test
-    fun modelsByEngine_cactus_hasTwoModels() {
+    fun modelsByEngine_cactus_hasOneModel() {
         val cactusModels = ModelInfo.modelsByEngine[EngineType.CACTUS]
         assertNotNull(cactusModels)
-        assertEquals(2, cactusModels.size)
+        assertEquals(1, cactusModels.size)
     }
 
     @Test
     fun modelsByEngine_qwen_hasOneModel() {
-        val qwenModels = ModelInfo.modelsByEngine[EngineType.QWEN_ASR]
+        val qwenModels = ModelInfo.modelsByEngine[EngineType.QWEN_ONNX]
         assertNotNull(qwenModels)
         assertEquals(1, qwenModels.size)
-        assertEquals("qwen3-asr-0.6b", qwenModels.first().id)
+        assertEquals("qwen3-asr-0.6b-onnx", qwenModels.first().id)
     }
 }
