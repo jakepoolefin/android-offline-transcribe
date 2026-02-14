@@ -1,7 +1,8 @@
 package com.voiceping.offlinetranscription.model
 
-enum class EngineType { WHISPER_CPP, SHERPA_ONNX, SHERPA_ONNX_STREAMING }
+enum class EngineType { WHISPER_CPP, SHERPA_ONNX, SHERPA_ONNX_STREAMING, CACTUS, QWEN_ASR, QWEN_ONNX }
 enum class SherpaModelType { MOONSHINE, SENSE_VOICE, ZIPFORMER_TRANSDUCER, OMNILINGUAL_CTC }
+enum class CactusModelType { WHISPER, MOONSHINE }
 
 data class ModelFile(val url: String, val localName: String)
 
@@ -10,6 +11,7 @@ data class ModelInfo(
     val displayName: String,
     val engineType: EngineType,
     val sherpaModelType: SherpaModelType? = null,
+    val cactusModelType: CactusModelType? = null,
     val parameterCount: String,
     val sizeOnDisk: String,
     val description: String,
@@ -21,6 +23,9 @@ data class ModelInfo(
             EngineType.WHISPER_CPP -> "whisper.cpp (C++/JNI)"
             EngineType.SHERPA_ONNX -> "sherpa-onnx offline (ONNX Runtime)"
             EngineType.SHERPA_ONNX_STREAMING -> "sherpa-onnx streaming (ONNX Runtime)"
+            EngineType.CACTUS -> "Cactus (ARM SIMD)"
+            EngineType.QWEN_ASR -> "qwen-asr (Pure C/NEON)"
+            EngineType.QWEN_ONNX -> "QwenASR (ONNX Runtime)"
         }
 
     companion object {
@@ -41,6 +46,12 @@ data class ModelInfo(
 
         private const val OMNILINGUAL_300M_BASE_URL =
             "https://huggingface.co/csukuangfj2/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/resolve/main/"
+
+        private const val QWEN_ASR_0_6B_BASE_URL =
+            "https://huggingface.co/Qwen/Qwen3-ASR-0.6B/resolve/main/"
+
+        private const val QWEN_ASR_ONNX_BASE_URL =
+            "https://huggingface.co/jima/qwen3-asr-0.6b-onnx-int8/resolve/main/"
 
         private fun moonshineFiles(baseUrl: String) = listOf(
             ModelFile("${baseUrl}preprocess.onnx", "preprocess.onnx"),
@@ -188,6 +199,64 @@ data class ModelInfo(
                         "joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx"
                     ),
                     ModelFile("${ZIPFORMER_EN_BASE_URL}tokens.txt", "tokens.txt"),
+                )
+            ),
+            // -- Cactus Engine --
+            ModelInfo(
+                id = "cactus-whisper-tiny",
+                displayName = "Whisper Tiny (Cactus)",
+                engineType = EngineType.CACTUS,
+                cactusModelType = CactusModelType.WHISPER,
+                parameterCount = "39M",
+                sizeOnDisk = "~75 MB",
+                description = "Whisper Tiny via energy-efficient Cactus ARM SIMD engine.",
+                files = emptyList() // Cactus manages its own model downloads
+            ),
+            ModelInfo(
+                id = "cactus-moonshine-base",
+                displayName = "Moonshine Base (Cactus)",
+                engineType = EngineType.CACTUS,
+                cactusModelType = CactusModelType.MOONSHINE,
+                parameterCount = "62M",
+                sizeOnDisk = "~145 MB",
+                description = "Moonshine Base via energy-efficient Cactus ARM SIMD engine.",
+                languages = "English",
+                files = emptyList() // Cactus manages its own model downloads
+            ),
+            // -- Qwen ASR (pure C inference) --
+            ModelInfo(
+                id = "qwen3-asr-0.6b",
+                displayName = "Qwen3 ASR 0.6B",
+                engineType = EngineType.QWEN_ASR,
+                parameterCount = "600M",
+                sizeOnDisk = "~1.8 GB",
+                description = "30 languages. Pure C inference with NEON. ~2.7 GB RAM peak.",
+                languages = "30 languages",
+                files = listOf(
+                    ModelFile("${QWEN_ASR_0_6B_BASE_URL}config.json", "config.json"),
+                    ModelFile("${QWEN_ASR_0_6B_BASE_URL}generation_config.json", "generation_config.json"),
+                    ModelFile("${QWEN_ASR_0_6B_BASE_URL}model.safetensors", "model.safetensors"),
+                    ModelFile("${QWEN_ASR_0_6B_BASE_URL}vocab.json", "vocab.json"),
+                    ModelFile("${QWEN_ASR_0_6B_BASE_URL}merges.txt", "merges.txt"),
+                )
+            ),
+            // -- Qwen ASR (ONNX Runtime, INT8 quantized) --
+            ModelInfo(
+                id = "qwen3-asr-0.6b-onnx",
+                displayName = "Qwen3 ASR 0.6B (ONNX)",
+                engineType = EngineType.QWEN_ONNX,
+                parameterCount = "600M",
+                sizeOnDisk = "~1.9 GB",
+                description = "30 languages. INT8 quantized ONNX. Uses ORT from sherpa-onnx.",
+                languages = "30 languages",
+                files = listOf(
+                    ModelFile("${QWEN_ASR_ONNX_BASE_URL}encoder.int8.onnx", "encoder.int8.onnx"),
+                    ModelFile("${QWEN_ASR_ONNX_BASE_URL}decoder_prefill.int8.onnx", "decoder_prefill.int8.onnx"),
+                    ModelFile("${QWEN_ASR_ONNX_BASE_URL}decoder_decode.int8.onnx", "decoder_decode.int8.onnx"),
+                    ModelFile("${QWEN_ASR_ONNX_BASE_URL}embed_tokens.fp16.npy", "embed_tokens.fp16.npy"),
+                    ModelFile("${QWEN_ASR_ONNX_BASE_URL}vocab.json", "vocab.json"),
+                    ModelFile("${QWEN_ASR_ONNX_BASE_URL}config.json", "config.json"),
+                    ModelFile("${QWEN_ASR_ONNX_BASE_URL}tokens.json", "tokens.json"),
                 )
             ),
         )

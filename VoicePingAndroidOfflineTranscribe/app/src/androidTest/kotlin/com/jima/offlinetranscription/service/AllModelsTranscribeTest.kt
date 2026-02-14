@@ -142,6 +142,11 @@ class AllModelsTranscribeTest {
                 modelType = model.sherpaModelType!!
             )
             EngineType.SHERPA_ONNX_STREAMING -> SherpaOnnxStreamingEngine()
+            EngineType.CACTUS -> CactusEngine(
+                cactusModelType = model.cactusModelType
+                    ?: error("cactusModelType is required for CACTUS models")
+            )
+            EngineType.QWEN_ASR -> QwenASREngine()
         }
     }
 
@@ -150,6 +155,8 @@ class AllModelsTranscribeTest {
             EngineType.WHISPER_CPP -> downloader.modelFilePath(model)
             EngineType.SHERPA_ONNX -> downloader.modelDir(model).absolutePath
             EngineType.SHERPA_ONNX_STREAMING -> downloader.modelDir(model).absolutePath
+            EngineType.CACTUS -> "" // Cactus manages its own local model storage.
+            EngineType.QWEN_ASR -> downloader.modelDir(model).absolutePath
         }
     }
 

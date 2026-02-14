@@ -16,6 +16,7 @@ class ModelDownloader(private val modelsDir: File) {
     companion object {
         private const val DOWNLOAD_BUFFER_BYTES = 8 * 1024
         private const val TEMP_SUFFIX = ".tmp"
+        private const val MANAGED_MODEL_READY_MARKER = ".managed_model_ready"
         private val MANAGED_MODEL_SUFFIXES = setOf(
             ".onnx",
             ".txt",
@@ -43,12 +44,26 @@ class ModelDownloader(private val modelsDir: File) {
     /** Check that all files for a model are downloaded. */
     fun isModelDownloaded(model: ModelInfo): Boolean {
         val dir = modelDir(model)
+        if (model.files.isEmpty()) {
+            // Engine-managed models (e.g. Cactus) don't use our file catalog.
+            // We treat them as downloaded only after a successful load has been recorded.
+            return File(dir, MANAGED_MODEL_READY_MARKER).exists()
+        }
         return model.files.all { File(dir, it.localName).exists() }
+    }
+
+    /** Mark an engine-managed model (empty file catalog) as ready after successful engine load. */
+    fun markManagedModelReady(model: ModelInfo) {
+        if (model.files.isNotEmpty()) return
+        val dir = modelDir(model)
+        dir.mkdirs()
+        File(dir, MANAGED_MODEL_READY_MARKER).writeText("ready")
     }
 
     /** Downloads all files for a model, emitting overall progress (0.0 to 1.0). */
     fun download(model: ModelInfo): Flow<Float> = flow {
         if (model.files.isEmpty()) {
+            modelDir(model).mkdirs()
             emit(1.0f)
             return@flow
         }

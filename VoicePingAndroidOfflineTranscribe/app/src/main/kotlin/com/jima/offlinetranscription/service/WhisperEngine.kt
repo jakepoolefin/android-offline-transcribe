@@ -191,6 +191,9 @@ class WhisperEngine(
         private const val SHERPA_OFFLINE_REALTIME_CHUNK_SECONDS = 3.5f
         private const val SHERPA_INITIAL_MIN_NEW_AUDIO_SECONDS = 0.35f
         private const val SHERPA_MIN_NEW_AUDIO_SECONDS = 0.7f
+        // Cactus requires at least ~1s of 16kHz mono PCM per inference request.
+        private const val CACTUS_INITIAL_MIN_NEW_AUDIO_SECONDS = 1.0f
+        private const val CACTUS_MIN_NEW_AUDIO_SECONDS = 1.0f
         // Omnilingual CTC is significantly heavier than other sherpa offline models.
         // Keep realtime decode windows smaller and cadence slower to avoid UI starvation.
         private const val OMNILINGUAL_REALTIME_CHUNK_SECONDS = 4.0f
@@ -302,12 +305,23 @@ class WhisperEngine(
                     ?: throw IllegalArgumentException("sherpaModelType required for SHERPA_ONNX models")
             )
             EngineType.SHERPA_ONNX_STREAMING -> SherpaOnnxStreamingEngine()
+            EngineType.CACTUS -> {
+                if (!CactusEngine.isRuntimeSupported()) {
+                    throw IllegalStateException("Cactus engine requires an arm64-v8a device.")
+                }
+                CactusEngine(
+                    cactusModelType = model.cactusModelType
+                        ?: throw IllegalArgumentException("cactusModelType required for CACTUS models")
+                )
+            }
+            EngineType.QWEN_ASR -> QwenASREngine()
+            EngineType.QWEN_ONNX -> QwenOnnxEngine()
         }
     }
 
     private fun createChunkManagerForModel(model: ModelInfo): StreamingChunkManager {
         val chunkSeconds = when (model.engineType) {
-            EngineType.SHERPA_ONNX -> if (isOmnilingualModel(model)) {
+            EngineType.SHERPA_ONNX, EngineType.CACTUS -> if (isOmnilingualModel(model)) {
                 OMNILINGUAL_REALTIME_CHUNK_SECONDS
             } else {
                 SHERPA_OFFLINE_REALTIME_CHUNK_SECONDS
@@ -320,6 +334,7 @@ class WhisperEngine(
             } else {
                 SHERPA_MIN_NEW_AUDIO_SECONDS
             }
+            EngineType.CACTUS -> CACTUS_MIN_NEW_AUDIO_SECONDS
             else -> DEFAULT_MIN_NEW_AUDIO_SECONDS
         }
         return StreamingChunkManager(
@@ -329,7 +344,15 @@ class WhisperEngine(
         )
     }
 
-    private fun isSherpaOfflineModel(): Boolean = _selectedModel.value.engineType == EngineType.SHERPA_ONNX
+    private fun isFastOfflineModel(): Boolean {
+        val type = _selectedModel.value.engineType
+        return type == EngineType.SHERPA_ONNX || type == EngineType.CACTUS
+    }
+
+    private fun isCactusModel(model: ModelInfo = _selectedModel.value): Boolean {
+        return model.engineType == EngineType.CACTUS
+    }
+
     private fun isOmnilingualModel(model: ModelInfo = _selectedModel.value): Boolean {
         return model.engineType == EngineType.SHERPA_ONNX &&
             model.sherpaModelType == com.voiceping.offlinetranscription.model.SherpaModelType.OMNILINGUAL_CTC
@@ -341,6 +364,9 @@ class WhisperEngine(
             EngineType.WHISPER_CPP -> downloader.modelFilePath(model)
             EngineType.SHERPA_ONNX -> downloader.modelDir(model).absolutePath
             EngineType.SHERPA_ONNX_STREAMING -> downloader.modelDir(model).absolutePath
+            EngineType.CACTUS -> "" // Cactus manages its own model storage
+            EngineType.QWEN_ASR -> downloader.modelDir(model).absolutePath
+            EngineType.QWEN_ONNX -> downloader.modelDir(model).absolutePath
         }
     }
 
@@ -363,6 +389,7 @@ class WhisperEngine(
             val modelPath = resolveModelPath(model)
             val success = engine.loadModel(modelPath)
             if (!success) throw Exception("Failed to load model")
+            downloader.markManagedModelReady(model)
             currentEngine = engine
             prewarmedModelId = null
             _modelState.value = ModelState.Loaded
@@ -434,6 +461,7 @@ class WhisperEngine(
                 engine.loadModel(modelPath)
             }
             if (!success) throw Exception("Failed to load model")
+            downloader.markManagedModelReady(model)
 
             val previousEngine = currentEngine
             currentEngine = engine
@@ -639,7 +667,8 @@ class WhisperEngine(
         val chunkSeconds = chunkManager.chunkSamples.toFloat() / AudioRecorder.SAMPLE_RATE
         val baseGate = when {
             isOmnilingualModel() -> OMNILINGUAL_MIN_NEW_AUDIO_SECONDS
-            isSherpaOfflineModel() -> SHERPA_MIN_NEW_AUDIO_SECONDS
+            isCactusModel() -> CACTUS_MIN_NEW_AUDIO_SECONDS
+            isFastOfflineModel() -> SHERPA_MIN_NEW_AUDIO_SECONDS
             else -> DEFAULT_MIN_NEW_AUDIO_SECONDS
         }
         val initialGate = initialRealtimeDelayForModel()
@@ -1080,7 +1109,7 @@ class WhisperEngine(
         if (audioSamples.isEmpty()) return
         val sliceStartSec = slice.startSample.toFloat() / AudioRecorder.SAMPLE_RATE
         val sliceEndSec = slice.endSample.toFloat() / AudioRecorder.SAMPLE_RATE
-        if (isSherpaOfflineModel()) {
+        if (isFastOfflineModel()) {
             val sliceRms = computeRms(audioSamples)
             if (sliceRms < SHERPA_MIN_INFERENCE_RMS) {
                 if (chunkManager.consecutiveSilentWindows <= 2 ||
@@ -1180,7 +1209,10 @@ class WhisperEngine(
         if (isOmnilingualModel()) {
             return OMNILINGUAL_INITIAL_MIN_NEW_AUDIO_SECONDS
         }
-        return if (isSherpaOfflineModel()) {
+        if (isCactusModel()) {
+            return CACTUS_INITIAL_MIN_NEW_AUDIO_SECONDS
+        }
+        return if (isFastOfflineModel()) {
             SHERPA_INITIAL_MIN_NEW_AUDIO_SECONDS
         } else {
             DEFAULT_INITIAL_MIN_NEW_AUDIO_SECONDS
@@ -1188,9 +1220,12 @@ class WhisperEngine(
     }
 
     private fun adaptiveRealtimeDelayForModel(): Float {
-        if (!isSherpaOfflineModel()) return chunkManager.adaptiveDelay()
+        if (!isFastOfflineModel()) return chunkManager.adaptiveDelay()
         if (isOmnilingualModel()) {
             return OMNILINGUAL_MIN_NEW_AUDIO_SECONDS
+        }
+        if (isCactusModel()) {
+            return CACTUS_MIN_NEW_AUDIO_SECONDS
         }
         // SenseVoice/Moonshine: use base delay (CPU-aware delay applied by caller)
         return SHERPA_MIN_NEW_AUDIO_SECONDS

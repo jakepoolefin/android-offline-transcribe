@@ -44,6 +44,16 @@ class ModelDownloaderTest {
         )
     )
 
+    private val managedModel = ModelInfo(
+        id = "cactus-test",
+        displayName = "Cactus Test",
+        engineType = EngineType.CACTUS,
+        parameterCount = "39M",
+        sizeOnDisk = "~75 MB",
+        description = "Managed model",
+        files = emptyList()
+    )
+
     @Before
     fun setUp() {
         tempDir = File(System.getProperty("java.io.tmpdir"), "model_downloader_test_${System.nanoTime()}")
@@ -135,16 +145,24 @@ class ModelDownloaderTest {
         assertFalse(downloader.isModelDownloaded(singleFileModel))
     }
 
+    @Test
+    fun isModelDownloaded_managedModelFalseUntilMarkedReady() {
+        assertFalse(downloader.isModelDownloaded(managedModel))
+        downloader.markManagedModelReady(managedModel)
+        assertTrue(downloader.isModelDownloaded(managedModel))
+    }
+
     // -- Catalog models --
 
     @Test
     fun isModelDownloaded_worksWithRealCatalogModels() {
-        // Verify isModelDownloaded works for each real catalog model
-        ModelInfo.availableModels.forEach { model ->
-            assertFalse(
-                downloader.isModelDownloaded(model),
-                "Fresh downloader should report ${model.id} as not downloaded"
-            )
-        }
+        // Verify isModelDownloaded works for each real catalog model.
+        ModelInfo.availableModels
+            .forEach { model ->
+                assertFalse(
+                    downloader.isModelDownloaded(model),
+                    "Fresh downloader should report ${model.id} as not downloaded"
+                )
+            }
     }
 }

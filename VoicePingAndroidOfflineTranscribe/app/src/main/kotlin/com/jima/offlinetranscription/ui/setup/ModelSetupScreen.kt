@@ -117,4 +117,7 @@ private fun engineLabel(type: EngineType): String = when (type) {
     EngineType.WHISPER_CPP -> "Whisper (whisper.cpp)"
     EngineType.SHERPA_ONNX -> "Moonshine / SenseVoice / Omnilingual (sherpa-onnx)"
     EngineType.SHERPA_ONNX_STREAMING -> "Streaming (sherpa-onnx)"
+    EngineType.CACTUS -> "Cactus (ARM SIMD)"
+    EngineType.QWEN_ASR -> "Qwen3 ASR (Pure C/NEON)"
+    EngineType.QWEN_ONNX -> "Qwen3 ASR (ONNX Runtime)"
 }

@@ -67,7 +67,14 @@ class AsrEngineTest {
 
     @Test
     fun engineTypes_coverAllModels() {
-        val validTypes = setOf(EngineType.WHISPER_CPP, EngineType.SHERPA_ONNX, EngineType.SHERPA_ONNX_STREAMING)
+        val validTypes = setOf(
+            EngineType.WHISPER_CPP,
+            EngineType.SHERPA_ONNX,
+            EngineType.SHERPA_ONNX_STREAMING,
+            EngineType.CACTUS,
+            EngineType.QWEN_ASR,
+            EngineType.QWEN_ONNX
+        )
         ModelInfo.availableModels.forEach { model ->
             assertTrue(
                 model.engineType in validTypes,

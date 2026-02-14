@@ -9,8 +9,8 @@ import kotlin.test.assertTrue
 class ModelInfoTest {
 
     @Test
-    fun availableModels_hasElevenEntries() {
-        assertEquals(11, ModelInfo.availableModels.size)
+    fun availableModels_hasFourteenEntries() {
+        assertEquals(15, ModelInfo.availableModels.size)
     }
 
     @Test
@@ -34,6 +34,10 @@ class ModelInfoTest {
         assertTrue("sensevoice-small" in ids)
         assertTrue("omnilingual-300m" in ids)
         assertTrue("zipformer-20m" in ids)
+        assertTrue("cactus-whisper-tiny" in ids)
+        assertTrue("cactus-moonshine-base" in ids)
+        assertTrue("qwen3-asr-0.6b" in ids)
+        assertTrue("qwen3-asr-0.6b-onnx" in ids)
     }
 
     @Test
@@ -161,12 +165,14 @@ class ModelInfoTest {
 
     @Test
     fun allFiles_haveValidUrls() {
-        ModelInfo.availableModels.forEach { model ->
-            model.files.forEach { file ->
-                assertTrue(file.url.startsWith("https://"), "URL should start with https:// for ${file.localName} in ${model.id}")
-                assertTrue(file.url.contains("huggingface.co"), "URL should be on huggingface for ${file.localName} in ${model.id}")
+        ModelInfo.availableModels
+            .filter { it.engineType != EngineType.CACTUS } // Cactus manages its own downloads
+            .forEach { model ->
+                model.files.forEach { file ->
+                    assertTrue(file.url.startsWith("https://"), "URL should start with https:// for ${file.localName} in ${model.id}")
+                    assertTrue(file.url.contains("huggingface.co"), "URL should be on huggingface for ${file.localName} in ${model.id}")
+                }
             }
-        }
     }
 
     @Test
@@ -216,6 +222,9 @@ class ModelInfoTest {
         assertTrue(grouped.containsKey(EngineType.WHISPER_CPP))
         assertTrue(grouped.containsKey(EngineType.SHERPA_ONNX))
         assertTrue(grouped.containsKey(EngineType.SHERPA_ONNX_STREAMING))
+        assertTrue(grouped.containsKey(EngineType.CACTUS))
+        assertTrue(grouped.containsKey(EngineType.QWEN_ASR))
+        assertTrue(grouped.containsKey(EngineType.QWEN_ONNX))
     }
 
     @Test
@@ -276,12 +285,53 @@ class ModelInfoTest {
     // -- Enum completeness --
 
     @Test
-    fun engineType_hasThreeValues() {
-        assertEquals(3, EngineType.entries.size)
+    fun engineType_hasFiveValues() {
+        assertEquals(6, EngineType.entries.size)
     }
 
     @Test
     fun sherpaModelType_hasFourValues() {
         assertEquals(4, SherpaModelType.entries.size)
+    }
+
+    @Test
+    fun cactusModelType_hasTwoValues() {
+        assertEquals(2, CactusModelType.entries.size)
+    }
+
+    // -- Cactus engine --
+
+    @Test
+    fun cactusModels_haveCactusEngineType() {
+        ModelInfo.availableModels
+            .filter { it.id.startsWith("cactus-") }
+            .forEach { model ->
+                assertEquals(EngineType.CACTUS, model.engineType, "Expected CACTUS for ${model.id}")
+                assertNotNull(model.cactusModelType, "cactusModelType should not be null for ${model.id}")
+            }
+    }
+
+    @Test
+    fun cactusModels_haveEmptyFileList() {
+        ModelInfo.availableModels
+            .filter { it.engineType == EngineType.CACTUS }
+            .forEach { model ->
+                assertTrue(model.files.isEmpty(), "${model.id} should have empty files (Cactus manages its own downloads)")
+            }
+    }
+
+    @Test
+    fun modelsByEngine_cactus_hasTwoModels() {
+        val cactusModels = ModelInfo.modelsByEngine[EngineType.CACTUS]
+        assertNotNull(cactusModels)
+        assertEquals(2, cactusModels.size)
+    }
+
+    @Test
+    fun modelsByEngine_qwen_hasOneModel() {
+        val qwenModels = ModelInfo.modelsByEngine[EngineType.QWEN_ASR]
+        assertNotNull(qwenModels)
+        assertEquals(1, qwenModels.size)
+        assertEquals("qwen3-asr-0.6b", qwenModels.first().id)
     }
 }

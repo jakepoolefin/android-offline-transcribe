@@ -60,6 +60,14 @@
 -dontwarn com.k2fsa.sherpa.onnx.**
 
 # ----------------------------------------------------------
+# Cactus: on-device ASR (JNA + native libcactus.so)
+# ----------------------------------------------------------
+-keep class com.cactus.** { *; }
+-dontwarn com.cactus.**
+-keep class net.java.dev.jna.** { *; }
+-dontwarn net.java.dev.jna.**
+
+# ----------------------------------------------------------
 # Kotlin & Coroutines
 # ----------------------------------------------------------
 # Keep Kotlin metadata so reflection-based APIs (Room KSP
