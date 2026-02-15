@@ -167,16 +167,25 @@ class TranscriptionCoordinator(
         } finally {
             // Final transcription pass for any remaining buffered audio.
             // stopRecording() handles streaming engines; this handles offline engines.
+            // NOTE: We bypass isSessionActive() here because stopRecording()
+            // invalidates the session before cancelling the loop. The final
+            // pass must still run to capture any trailing audio.
             if (!asrEngine.isStreaming && asrEngine.isLoaded) {
-                val currentCount = engine.audioRecorder.sampleCount
-                if (currentCount > lastBufferSize) {
-                    try {
-                        withContext(NonCancellable) {
-                            transcribeCurrentBuffer(asrEngine, sessionToken)
+                try {
+                    withContext(NonCancellable) {
+                        val currentCount = engine.audioRecorder.sampleCount
+                        if (currentCount > lastBufferSize) {
+                            transcribeFinalBuffer(asrEngine, currentCount)
                         }
-                    } catch (_: Throwable) {
-                        // Best-effort final pass
+                        // Commit any remaining hypothesis text as confirmed.
+                        // This runs on the coroutine thread (not UI thread) to
+                        // avoid racing with the loop's last iteration.
+                        engine.chunkManager.finalizeCurrentChunk()
+                        engine.updateConfirmedText(engine.chunkManager.confirmedText)
+                        engine.updateHypothesisText("")
                     }
+                } catch (_: Throwable) {
+                    // Best-effort final pass
                 }
             }
             transcriptionJob = null
@@ -236,7 +245,9 @@ class TranscriptionCoordinator(
                         val finalResult = asrEngine.getStreamingResult()
                         if (finalResult != null && finalResult.text.isNotBlank()) {
                             engine.chunkManager.confirmedSegments.add(finalResult)
-                            engine.updateConfirmedText(engine.chunkManager.renderSegmentsText(engine.chunkManager.confirmedSegments))
+                            val rendered = engine.chunkManager.renderSegmentsText(engine.chunkManager.confirmedSegments)
+                            engine.updateConfirmedText(rendered)
+                            engine.chunkManager.confirmedText = rendered
                         }
                         engine.updateHypothesisText("")
                         engine.scheduleTranslationUpdate()
@@ -471,6 +482,28 @@ class TranscriptionCoordinator(
         trimRecorderBufferIfNeeded(safeTrimSample)
     }
 
+    /**
+     * Final-pass transcription for offline engines, called from the realtimeLoop
+     * finally block. Unlike [transcribeCurrentBuffer], this skips the session-active
+     * guard (the session is already invalidated by stopRecording) and skips VAD/delay
+     * logic since we just want to flush whatever audio remains.
+     */
+    private suspend fun transcribeFinalBuffer(asrEngine: AsrEngine, currentBufferSize: Int) {
+        val slice = engine.chunkManager.computeSlice(currentBufferSize) ?: return
+        val audioSamples = engine.audioRecorder.samplesRange(slice.startSample, slice.endSample)
+        if (audioSamples.isEmpty()) return
+
+        lastBufferSize = currentBufferSize
+        val numThreads = computeInferenceThreads()
+        val newSegments = asrEngine.transcribe(audioSamples, numThreads, "auto")
+        if (newSegments.isNotEmpty()) {
+            engine.chunkManager.processTranscriptionResult(newSegments, slice.sliceOffsetMs)
+            engine.updateConfirmedText(engine.chunkManager.confirmedText)
+            engine.updateHypothesisText("")
+            Log.i("TranscriptionCoordinator", "final pass: ${newSegments.size} segments, text='${engine.chunkManager.confirmedText.take(80)}'")
+        }
+    }
+
     // MARK: - Streaming Drain
 
     fun drainFinalStreamingAudioIfNeeded() {
@@ -494,16 +527,6 @@ class TranscriptionCoordinator(
         engine.updateHypothesisText("")
         engine.chunkManager.confirmedText = engine.confirmedText.value
         engine.scheduleTranslationUpdate()
-    }
-
-    // MARK: - Finalization
-
-    fun finalizeBufferedRecordingStop() {
-        engine.audioRecorder.stopRecording()
-        engine.chunkManager.finalizeCurrentChunk()
-        engine.updateConfirmedText(engine.chunkManager.confirmedText)
-        engine.updateHypothesisText("")
-        Log.i("TranscriptionCoordinator", "stopRecording: finalized text='${engine.confirmedText.value.take(80)}' audio=${engine.audioRecorder.bufferSeconds}s")
     }
 
     // MARK: - Delay & VAD

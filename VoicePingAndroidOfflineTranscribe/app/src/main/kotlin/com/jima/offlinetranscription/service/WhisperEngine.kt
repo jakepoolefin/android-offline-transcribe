@@ -194,7 +194,15 @@ class WhisperEngine(
     }
 
     val fullTranscriptionText: String
-        get() = chunkManager.fullTranscriptionText()
+        get() {
+            // Use StateFlow values directly (not chunkManager text properties)
+            // so this works for both offline and streaming engines.
+            val parts = listOfNotNull(
+                _confirmedText.value.takeIf { it.isNotBlank() },
+                _hypothesisText.value.takeIf { it.isNotBlank() }
+            )
+            return TextNormalizationUtils.normalizeText(parts.joinToString(" "))
+        }
 
     val recordingDurationSeconds: Double
         get() = audioRecorder.bufferSeconds
@@ -598,10 +606,20 @@ class WhisperEngine(
     fun stopRecording() {
         if (_sessionState.value != SessionState.Recording) return
         transitionTo(SessionState.Stopping)
+        // Cancel file transcription if running (transcribeFile uses fileTranscriptionJob)
+        fileTranscriptionJob?.cancel()
+        fileTranscriptionJob = null
         // Stop mic input first so no new audio arrives
         audioRecorder.stopRecording()
         cancelRecorderAndEnergyJobs()
-        transcriptionCoordinator.drainFinalStreamingAudioIfNeeded()
+
+        // For streaming engines, drain remaining audio synchronously.
+        // For offline engines, the realtimeLoop finally block handles
+        // transcribeFinalBuffer + finalizeCurrentChunk on the coroutine thread
+        // to avoid racing with the loop's last iteration.
+        if (currentEngine?.isStreaming == true) {
+            transcriptionCoordinator.drainFinalStreamingAudioIfNeeded()
+        }
 
         // Stop MediaProjection foreground service if it was running
         if (_audioInputMode.value == AudioInputMode.SYSTEM_PLAYBACK) {
@@ -621,9 +639,16 @@ class WhisperEngine(
     private suspend fun stopRecordingAndWait() {
         if (_sessionState.value != SessionState.Recording) return
         transitionTo(SessionState.Stopping)
+        fileTranscriptionJob?.cancelAndJoin()
+        fileTranscriptionJob = null
         audioRecorder.stopRecording()
         cancelRecorderAndEnergyJobsAndWait()
-        transcriptionCoordinator.drainFinalStreamingAudioIfNeeded()
+
+        // For streaming engines, drain remaining audio synchronously.
+        // For offline engines, the realtimeLoop finally block handles finalization.
+        if (currentEngine?.isStreaming == true) {
+            transcriptionCoordinator.drainFinalStreamingAudioIfNeeded()
+        }
 
         if (_audioInputMode.value == AudioInputMode.SYSTEM_PLAYBACK) {
             try {
@@ -703,6 +728,8 @@ class WhisperEngine(
             transcriptionCoordinator.cancelTranscriptionJob()
             cancelRecorderAndEnergyJobs()
         }
+        fileTranscriptionJob?.cancel()
+        fileTranscriptionJob = null
         resetTranscriptionState()
         transitionTo(SessionState.Idle)
     }
@@ -882,7 +909,13 @@ class WhisperEngine(
                     skipped = false
                 )
             } finally {
-                transitionTo(SessionState.Idle)
+                // Only transition to Idle if we're still in the file-transcription session.
+                // stopRecording/clearTranscription may have already transitioned us, and
+                // a new recording may have started — don't clobber it.
+                val state = _sessionState.value
+                if (state == SessionState.Recording || state == SessionState.Stopping) {
+                    transitionTo(SessionState.Idle)
+                }
             }
         }
     }
