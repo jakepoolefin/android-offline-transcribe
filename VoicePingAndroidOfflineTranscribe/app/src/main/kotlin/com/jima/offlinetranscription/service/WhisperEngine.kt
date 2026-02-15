@@ -14,6 +14,7 @@ import com.voiceping.offlinetranscription.model.AppError
 import com.voiceping.offlinetranscription.model.EngineType
 import com.voiceping.offlinetranscription.model.ModelInfo
 import com.voiceping.offlinetranscription.model.ModelState
+import com.voiceping.offlinetranscription.util.TextNormalizationUtils
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -38,20 +39,6 @@ enum class SessionState {
     Stopping,   // Stop requested, waiting for jobs to complete
     Error       // Error occurred, needs clearTranscription() to reset
 }
-
-/** E2E test result for evidence collection. */
-data class E2ETestResult(
-    val modelId: String,
-    val engine: String,
-    val transcript: String,
-    val tokensPerSecond: Double,
-    val translatedText: String,
-    val pass: Boolean,
-    val skipped: Boolean = false,
-    val durationMs: Double,
-    val timestamp: String,
-    val error: String? = null
-)
 
 class WhisperEngine(
     private val context: Context,
@@ -147,9 +134,9 @@ class WhisperEngine(
     private val _memoryMB = MutableStateFlow(0f)
     val memoryMB: StateFlow<Float> = _memoryMB.asStateFlow()
 
-    // E2E evidence result
-    private val _e2eResult = MutableStateFlow<E2ETestResult?>(null)
-    val e2eResult: StateFlow<E2ETestResult?> = _e2eResult.asStateFlow()
+    // E2E evidence collection (delegated to E2ETestOrchestrator)
+    val e2eOrchestrator by lazy { E2ETestOrchestrator(context, this) }
+    val e2eResult: StateFlow<E2ETestResult?> get() = e2eOrchestrator.e2eResult
 
     // ASR engine abstraction
     private val setupMutex = Mutex()
@@ -184,7 +171,7 @@ class WhisperEngine(
     }
 
     companion object {
-        private const val MAX_BUFFER_SAMPLES = 16000 * 300 // 5 minutes
+        private const val MAX_BUFFER_SAMPLES = AudioConstants.SAMPLE_RATE * 300 // 5 minutes
         // Low-latency tuning for live mic mode (file transcription path is unaffected).
         private const val DEFAULT_MIN_NEW_AUDIO_SECONDS = 0.45f
         private const val DEFAULT_OFFLINE_REALTIME_CHUNK_SECONDS = 2.8f
@@ -210,30 +197,13 @@ class WhisperEngine(
         private const val MAX_CPU_PROTECT_DELAY_SECONDS = 1.6f
         private const val INFERENCE_EMA_ALPHA = 0.20
         private const val DIAGNOSTIC_LOG_INTERVAL = 5L
-        // Emulator host-mic levels are often lower than physical devices.
+        // Low threshold to handle quiet microphones.
         private const val SILENCE_THRESHOLD = 0.0015f
         private const val VAD_PREROLL_SECONDS = 0.6f
         private const val NO_SIGNAL_TIMEOUT_SECONDS = 8.0
         private const val SIGNAL_ENERGY_THRESHOLD = 0.005f
-        private val WHITESPACE_REGEX = "\\s+".toRegex()
-
-        /**
-         * Normalize language codes: strip SenseVoice "<|en|>" markers,
-         * trim, lowercase, take first BCP-47 segment, validate letters only.
-         */
-        fun normalizeLanguageCode(raw: String?): String? {
-            if (raw.isNullOrBlank()) return null
-            val cleaned = raw
-                .replace("<|", "").replace("|>", "")
-                .trim().lowercase()
-                .split("-").first()
-            return cleaned.takeIf { it.isNotBlank() && it.all { c -> c.isLetter() } }
-        }
-        private const val CJK_CHAR_CLASS = "[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}々〆ヵヶー]"
-        private val CJK_INNER_SPACE_REGEX = "($CJK_CHAR_CLASS)\\s+($CJK_CHAR_CLASS)".toRegex()
-        private val SPACE_BEFORE_CJK_PUNCT_REGEX = "\\s+([、。！？：；）」』】〉》])".toRegex()
-        private val SPACE_AFTER_CJK_OPEN_PUNCT_REGEX = "([（「『【〈《])\\s+".toRegex()
-        private val SPACE_AFTER_CJK_END_PUNCT_REGEX = "([、。！？：；])\\s+($CJK_CHAR_CLASS)".toRegex()
+        fun normalizeLanguageCode(raw: String?): String? =
+            TextNormalizationUtils.normalizeLanguageCode(raw)
     }
 
     val fullTranscriptionText: String
@@ -1290,7 +1260,7 @@ class WhisperEngine(
         chunkManager = createChunkManagerForModel(_selectedModel.value)
         _confirmedText.value = ""
         _hypothesisText.value = ""
-        _e2eResult.value = null
+        e2eOrchestrator.reset()
         _detectedLanguage.value = null
         _bufferEnergy.value = emptyList()
         _bufferSeconds.value = 0.0
@@ -1324,7 +1294,7 @@ class WhisperEngine(
         lastTranslationInput = null
     }
 
-    /** Transcribe a WAV file. Used for testing on emulator and file import UI. */
+    /** Transcribe a WAV file. Used for testing and file import UI. */
     fun transcribeFile(filePath: String, languageHint: String = "auto") {
         val engine = currentEngine
         if (engine == null || !engine.isLoaded) {
@@ -1352,7 +1322,7 @@ class WhisperEngine(
                 val audioSamples = withContext(Dispatchers.IO) {
                     readWavFile(filePath)
                 }
-                val durationSec = audioSamples.size / 16000.0
+                val durationSec = audioSamples.size / AudioConstants.SAMPLE_RATE.toDouble()
                 Log.i("WhisperEngine", "transcribeFile: ${audioSamples.size} samples (${durationSec}s)")
                 _hypothesisText.value = "Transcribing ${"%.1f".format(durationSec)}s of audio..."
 
@@ -1419,7 +1389,7 @@ class WhisperEngine(
 
                 // Write E2E evidence result
                 val transcript = _confirmedText.value
-                writeE2EResult(
+                e2eOrchestrator.writeResult(
                     transcript = transcript,
                     durationMs = if (skipped) 0.0 else elapsed * 1000,
                     tokensPerSecond = if (skipped) 0.0 else _tokensPerSecond.value,
@@ -1431,7 +1401,7 @@ class WhisperEngine(
             } catch (e: Throwable) {
                 Log.e("WhisperEngine", "transcribeFile failed", e)
                 _lastError.value = AppError.TranscriptionFailed(e)
-                writeE2EResult(
+                e2eOrchestrator.writeResult(
                     transcript = "",
                     durationMs = 0.0,
                     tokensPerSecond = 0.0,
@@ -1444,185 +1414,12 @@ class WhisperEngine(
         }
     }
 
-    private fun writeE2EResult(
-        transcript: String,
-        durationMs: Double,
-        tokensPerSecond: Double,
-        error: String?,
-        skipped: Boolean = false
-    ) {
-        val model = _selectedModel.value
-        val keywords = listOf("country", "ask", "do for", "fellow", "americans")
-        val lowerTranscript = transcript.lowercase()
-        val translatedText = _translatedConfirmedText.value
-        val sourceCode = _translationSourceLanguageCode.value.trim().lowercase()
-        val targetCode = _translationTargetLanguageCode.value.trim().lowercase()
-        val expectsTranslation = !skipped &&
-            _translationEnabled.value &&
-            transcript.isNotBlank() &&
-            sourceCode.isNotBlank() &&
-            targetCode.isNotBlank() &&
-            sourceCode != targetCode
-        val translationReady = !expectsTranslation || translatedText.isNotBlank()
-        val isOmnilingual = model.id.contains("omnilingual", ignoreCase = true)
-        val hasKeywordHit = keywords.any { lowerTranscript.contains(it) }
-        val hasMeaningfulText = transcript.any { it.isLetterOrDigit() }
-        val asciiLetters = transcript.count { it.isLetter() && it.code < 128 }
-        val nonAsciiLetters = transcript.count { it.isLetter() && it.code >= 128 }
-        val omnilingualLooksEnglish =
-            asciiLetters >= 8 &&
-                asciiLetters >= nonAsciiLetters
-        val isAndroidSpeech = model.engineType == com.voiceping.offlinetranscription.model.EngineType.ANDROID_SPEECH
-        val androidSpeechApiLimited = isAndroidSpeech &&
-            !AndroidSpeechEngine.supportsAudioPipe() &&
-            transcript.contains("API 33+")
-        val transcriptPass = when {
-            androidSpeechApiLimited -> true  // Engine correctly reports API limitation
-            isOmnilingual -> hasMeaningfulText && omnilingualLooksEnglish
-            else -> hasKeywordHit
-        }
-
-        // pass = core transcription quality only; translation tracked separately
-        val pass = !skipped &&
-            error == null &&
-            transcript.isNotEmpty() &&
-            transcriptPass
-
-        val result = E2ETestResult(
-            modelId = model.id,
-            engine = model.inferenceMethod,
-            transcript = transcript,
-            tokensPerSecond = tokensPerSecond,
-            translatedText = translatedText,
-            pass = pass,
-            skipped = skipped,
-            durationMs = durationMs,
-            timestamp = java.time.Instant.now().toString(),
-            error = error
-        )
-        _e2eResult.value = result
-
-        val json = buildString {
-            append("{\n")
-            append("  \"model_id\": \"${jsonEscape(result.modelId)}\",\n")
-            append("  \"engine\": \"${jsonEscape(result.engine)}\",\n")
-            append("  \"transcript\": \"${jsonEscape(result.transcript)}\",\n")
-            append("  \"tokens_per_second\": ${result.tokensPerSecond},\n")
-            append("  \"translated_text\": \"${jsonEscape(result.translatedText)}\",\n")
-            append("  \"translation_warning\": ")
-            append(
-                _translationWarning.value?.let { "\"${jsonEscape(it)}\"" } ?: "null"
-            )
-            append(",\n")
-            append("  \"expects_translation\": $expectsTranslation,\n")
-            append("  \"translation_ready\": $translationReady,\n")
-            append("  \"pass\": ${result.pass},\n")
-            append("  \"skipped\": ${result.skipped},\n")
-            append("  \"duration_ms\": ${result.durationMs},\n")
-            append("  \"timestamp\": \"${jsonEscape(result.timestamp)}\",\n")
-            append("  \"error\": ")
-            append(
-                if (result.error != null) {
-                    "\"${jsonEscape(result.error)}\""
-                } else {
-                    "null"
-                }
-            )
-            append("\n")
-            append("}")
-        }
-        writeE2EJson(modelId = model.id, json = json)
-    }
-
     fun writeE2EFailure(modelId: String = _selectedModel.value.id, error: String) {
-        val model = ModelInfo.findByIdOrLegacy(modelId) ?: _selectedModel.value
-        val json = buildString {
-            append("{\n")
-            append("  \"model_id\": \"${jsonEscape(modelId)}\",\n")
-            append("  \"engine\": \"${jsonEscape(model.inferenceMethod)}\",\n")
-            append("  \"transcript\": \"\",\n")
-            append("  \"tokens_per_second\": 0.0,\n")
-            append("  \"translated_text\": \"\",\n")
-            append("  \"translation_warning\": null,\n")
-            append("  \"expects_translation\": false,\n")
-            append("  \"translation_ready\": true,\n")
-            append("  \"pass\": false,\n")
-            append("  \"skipped\": false,\n")
-            append("  \"duration_ms\": 0.0,\n")
-            append("  \"timestamp\": \"${jsonEscape(java.time.Instant.now().toString())}\",\n")
-            append("  \"error\": \"${jsonEscape(error)}\"\n")
-            append("}")
-        }
-        writeE2EJson(modelId = modelId, json = json)
+        e2eOrchestrator.writeFailure(modelId = modelId, error = error)
     }
 
     fun writeE2ESkipped(modelId: String = _selectedModel.value.id, reason: String) {
-        val model = ModelInfo.findByIdOrLegacy(modelId) ?: _selectedModel.value
-        val json = buildString {
-            append("{\n")
-            append("  \"model_id\": \"${jsonEscape(modelId)}\",\n")
-            append("  \"engine\": \"${jsonEscape(model.inferenceMethod)}\",\n")
-            append("  \"transcript\": \"\",\n")
-            append("  \"tokens_per_second\": 0.0,\n")
-            append("  \"translated_text\": \"\",\n")
-            append("  \"translation_warning\": null,\n")
-            append("  \"expects_translation\": false,\n")
-            append("  \"translation_ready\": true,\n")
-            append("  \"pass\": false,\n")
-            append("  \"skipped\": true,\n")
-            append("  \"duration_ms\": 0.0,\n")
-            append("  \"timestamp\": \"${jsonEscape(java.time.Instant.now().toString())}\",\n")
-            append("  \"error\": \"${jsonEscape(reason)}\"\n")
-            append("}")
-        }
-        writeE2EJson(modelId = modelId, json = json)
-    }
-
-    private fun writeE2EJson(modelId: String, json: String) {
-        var wrote = false
-
-        // App-private external dir (legacy path consumed by scripts/tests)
-        try {
-            val extDir = context.getExternalFilesDir(null)
-            if (extDir != null) {
-                val file = File(extDir, "e2e_result_${modelId}.json")
-                file.writeText(json)
-                Log.i("E2E", "Result written to ${file.absolutePath}")
-                wrote = true
-            }
-        } catch (e: Throwable) {
-            Log.w("E2E", "Could not write app-private E2E result JSON", e)
-        }
-
-        // Public evidence dir used by UiAutomator captures and adb pull.
-        try {
-            val evidenceDir = File("/sdcard/Documents/e2e/$modelId")
-            if (!evidenceDir.exists()) {
-                evidenceDir.mkdirs()
-            }
-            val evidenceFile = File(evidenceDir, "result.json")
-            evidenceFile.writeText(json)
-            Log.i("E2E", "Result mirrored to ${evidenceFile.absolutePath}")
-            wrote = true
-        } catch (e: Throwable) {
-            Log.w("E2E", "Could not mirror E2E result JSON to public evidence dir", e)
-        }
-
-        // Internal storage fallback — always accessible without permissions.
-        if (!wrote) {
-            try {
-                val internalFile = File(context.filesDir, "e2e_result_${modelId}.json")
-                internalFile.writeText(json)
-                Log.i("E2E", "Result written to internal: ${internalFile.absolutePath}")
-                wrote = true
-            } catch (e: Throwable) {
-                Log.w("E2E", "Could not write internal E2E result JSON", e)
-            }
-        }
-
-        if (!wrote) {
-            Log.w("E2E", "E2E result JSON was not written to any location")
-        }
+        e2eOrchestrator.writeSkipped(modelId = modelId, reason = reason)
     }
 
     private fun hasValidatedInternetConnection(): Boolean {
@@ -1677,14 +1474,6 @@ class WhisperEngine(
         }
     }
 
-    private fun jsonEscape(value: String): String {
-        return value
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
-    }
 
     private fun scheduleTranslationUpdate() {
         translationJob?.cancel()
@@ -1761,23 +1550,7 @@ class WhisperEngine(
         }
     }
 
-    private fun normalizeDisplayText(text: String): String {
-        val collapsed = text.replace(WHITESPACE_REGEX, " ").trim()
-        return normalizeCjkSpacing(collapsed)
-    }
-
-    private fun normalizeCjkSpacing(text: String): String {
-        var current = text
-        while (true) {
-            var next = current
-            next = CJK_INNER_SPACE_REGEX.replace(next, "$1$2")
-            next = SPACE_BEFORE_CJK_PUNCT_REGEX.replace(next, "$1")
-            next = SPACE_AFTER_CJK_OPEN_PUNCT_REGEX.replace(next, "$1")
-            next = SPACE_AFTER_CJK_END_PUNCT_REGEX.replace(next, "$1$2")
-            if (next == current) return next
-            current = next
-        }
-    }
+    private fun normalizeDisplayText(text: String): String = TextNormalizationUtils.normalizeText(text)
 
     private fun computeInferenceThreads(): Int {
         return Runtime.getRuntime().availableProcessors().coerceAtMost(4).coerceAtLeast(1)
@@ -1797,7 +1570,7 @@ class WhisperEngine(
         // Parse chunks to find fmt and data
         var bitsPerSample = 16
         var channels = 1
-        var sampleRate = 16000
+        var sampleRate = AudioConstants.SAMPLE_RATE
         var dataOffset = -1
         var dataSize = -1
 

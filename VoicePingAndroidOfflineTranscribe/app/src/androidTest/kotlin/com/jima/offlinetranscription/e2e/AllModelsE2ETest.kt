@@ -33,7 +33,6 @@ class AllModelsE2ETest {
     private lateinit var context: Context
 
     // Per-model download+load+transcribe timeout (ms)
-    // whisper.cpp on emulator is very slow — whisper-small needs ~500s, large-turbo ~1800s
     private fun timeout(modelId: String): Long = when {
         modelId.contains("android-speech") -> 120_000L // system-provided, no download; may run in real-time on API<33 (loopback)
         modelId.contains("qwen") -> 600_000L     // 10 min — 600M+ model, ORT fallback adds time
@@ -126,7 +125,7 @@ class AllModelsE2ETest {
         // 5. Wait for result.json to appear.
         // NOTE: The on-screen "E2E EVIDENCE" overlay can render before the file write finishes,
         // so we only treat the test as complete when result.json exists on disk.
-        // whisper.cpp on emulator is very slow — whisper-small needs ~600s for inference
+        // Large models can take a long time on older phones
         val evidenceTimeout = timeoutMs
         val startWait = System.currentTimeMillis()
         var resultExists = false
@@ -199,7 +198,7 @@ class AllModelsE2ETest {
     }
 
     /**
-     * Emulator-heavy model runs can trigger Android system ANR dialogs
+     * Heavy model runs can trigger Android system ANR dialogs
      * ("System UI isn't responding"), which block UiAutomator waits.
      * Prefer "Wait" to keep the app process alive.
      */

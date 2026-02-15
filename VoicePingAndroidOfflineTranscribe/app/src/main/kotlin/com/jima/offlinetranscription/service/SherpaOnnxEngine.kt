@@ -10,6 +10,7 @@ import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OfflineSenseVoiceModelConfig
 import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig
 import com.voiceping.offlinetranscription.model.SherpaModelType
+import com.voiceping.offlinetranscription.util.TextNormalizationUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -106,12 +107,7 @@ class SherpaOnnxEngine(
 
                         text = result.text.trim()
                         timestamps = result.timestamps
-                        // SenseVoice returns language codes in "<|en|>" format — normalize
-                        // to plain BCP-47 (e.g. "en"). Same fix as iOS SherpaOnnxOfflineEngine.
-                        lang = result.lang.takeIf { it.isNotBlank() }
-                            ?.replace("<|", "")?.replace("|>", "")
-                            ?.trim()?.lowercase()
-                            ?.takeIf { it.isNotBlank() }
+                        lang = TextNormalizationUtils.normalizeLanguageCode(result.lang)
                         var bestScore = if (text.isBlank()) Int.MIN_VALUE else scoreOmnilingualText(
                             text,
                             languageHint = language
