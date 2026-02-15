@@ -17,7 +17,9 @@ All ASR inference runs locally after model download.
 
 15 models across 6 engine types. Defined in `ModelInfo.kt`.
 
-Benchmarked on Samsung Galaxy S10 (SM-G973C, Snapdragon 855 / SM8150, API 31) with 30s JFK test audio (2026-02-15).
+Benchmarked on Samsung Galaxy S10 (Android 12, API 31) with 30s JFK test audio (2026-02-15).
+
+Model links point to the runtime distribution used by the app (mostly Hugging Face repos: `csukuangfj/*` sherpa-onnx, `ggerganov/whisper.cpp` GGML, `Qwen/Qwen3-ASR-0.6B` + `jima/*` Qwen ONNX).
 
 | Model | Engine | Size | Languages | Inference | tok/s | RTF | Result |
 |---|---|---|---|---|---|---|---|
@@ -49,12 +51,12 @@ RTF = Real Time Factor (lower is faster; <1 = faster than real-time). tok/s = ou
 
 - Orchestrator: `service/WhisperEngine.kt`
 - Engines (6 backends):
-  - `SherpaOnnxEngine` — sherpa-onnx offline (ONNX Runtime)
-  - `SherpaOnnxStreamingEngine` — sherpa-onnx streaming (ONNX Runtime)
-  - `CactusEngine` — whisper.cpp (GGML, via JNI)
-  - `QwenASREngine` — Pure C inference with ARM NEON
-  - `QwenOnnxEngine` — ONNX Runtime INT8 quantized
-  - `AndroidSpeechEngine` — Android SpeechRecognizer (online/offline)
+  - `SherpaOnnxEngine` — Moonshine, SenseVoice, Whisper, Omnilingual via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) ONNX Runtime
+  - `SherpaOnnxStreamingEngine` — Zipformer via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) ONNX Runtime (100 ms chunks)
+  - `CactusEngine` — Whisper via [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (GGML, via JNI)
+  - `QwenASREngine` — Qwen3 ASR via [antirez/qwen-asr](https://github.com/antirez/qwen-asr) (Pure C, ARM NEON)
+  - `QwenOnnxEngine` — Qwen3 ASR INT8 via ONNX Runtime (uses ORT from sherpa-onnx)
+  - `AndroidSpeechEngine` — Android [SpeechRecognizer](https://developer.android.com/reference/android/speech/SpeechRecognizer) (online/offline)
 - Audio capture:
   - `AudioRecorder` (microphone + playback capture)
   - `MediaProjectionService` (foreground service for capture flow)
@@ -117,53 +119,7 @@ Fixture: `artifacts/benchmarks/long_en_eval.wav` (30.00s, 16kHz mono WAV)
 - `duration_sec = duration_ms / 1000` from each model `result.json`.
 - `Words` is computed from transcript words: `[A-Za-z0-9']+`.
 - `tok/s` uses `tokens_per_second` from `result.json` when present; otherwise `Words / duration_sec`.
-- `RTF = audio_duration_sec / duration_sec`.
-
-#### iOS Graph
-
-![iOS tokens/sec](artifacts/benchmarks/ios_tokens_per_second.svg)
-
-#### iOS Results
-
-| Model | Engine | Words | Inference (ms) | Tok/s | RTF | Result |
-|---|---|---:|---:|---:|---:|---|
-| `apple-speech` | - | 0 | n/a | n/a | n/a | FAIL |
-| `moonshine-base` | - | 0 | n/a | n/a | n/a | FAIL |
-| `moonshine-tiny` | - | 0 | n/a | n/a | n/a | FAIL |
-| `omnilingual-300m` | - | 0 | n/a | n/a | n/a | FAIL |
-| `parakeet-tdt-v3` | - | 0 | n/a | n/a | n/a | FAIL |
-| `qwen3-asr-0.6b` | - | 0 | n/a | n/a | n/a | FAIL |
-| `qwen3-asr-0.6b-onnx` | - | 0 | n/a | n/a | n/a | FAIL |
-| `sensevoice-small` | - | 0 | n/a | n/a | n/a | FAIL |
-| `whisper-base` | - | 0 | n/a | n/a | n/a | FAIL |
-| `whisper-large-v3-turbo` | - | 0 | n/a | n/a | n/a | FAIL |
-| `whisper-large-v3-turbo-compressed` | - | 0 | n/a | n/a | n/a | FAIL |
-| `whisper-small` | - | 0 | n/a | n/a | n/a | FAIL |
-| `whisper-tiny` | - | 0 | n/a | n/a | n/a | FAIL |
-| `zipformer-20m` | - | 0 | n/a | n/a | n/a | FAIL |
-
-#### macOS Graph
-
-![macOS tokens/sec](artifacts/benchmarks/macos_tokens_per_second.svg)
-
-#### macOS Results
-
-| Model | Engine | Words | Inference (ms) | Tok/s | RTF | Result |
-|---|---|---:|---:|---:|---:|---|
-| `apple-speech` | - | 0 | n/a | n/a | n/a | FAIL |
-| `moonshine-base` | - | 0 | n/a | n/a | n/a | FAIL |
-| `moonshine-tiny` | - | 0 | n/a | n/a | n/a | FAIL |
-| `omnilingual-300m` | - | 0 | n/a | n/a | n/a | FAIL |
-| `parakeet-tdt-v3` | - | 0 | n/a | n/a | n/a | FAIL |
-| `qwen3-asr-0.6b` | - | 0 | n/a | n/a | n/a | FAIL |
-| `qwen3-asr-0.6b-onnx` | - | 0 | n/a | n/a | n/a | FAIL |
-| `sensevoice-small` | - | 0 | n/a | n/a | n/a | FAIL |
-| `whisper-base` | - | 0 | n/a | n/a | n/a | FAIL |
-| `whisper-large-v3-turbo` | - | 0 | n/a | n/a | n/a | FAIL |
-| `whisper-large-v3-turbo-compressed` | - | 0 | n/a | n/a | n/a | FAIL |
-| `whisper-small` | - | 0 | n/a | n/a | n/a | FAIL |
-| `whisper-tiny` | - | 0 | n/a | n/a | n/a | FAIL |
-| `zipformer-20m` | - | 0 | n/a | n/a | n/a | FAIL |
+- `RTF = duration_sec / audio_duration_sec`.
 
 #### Android Graph
 
@@ -173,30 +129,28 @@ Fixture: `artifacts/benchmarks/long_en_eval.wav` (30.00s, 16kHz mono WAV)
 
 | Model | Engine | Words | Inference (ms) | Tok/s | RTF | Result |
 |---|---|---:|---:|---:|---:|---|
-| `moonshine-tiny` | sherpa-onnx offline (ONNX Runtime) | 58 | 1363 | 42.55 | 22.01 | PASS |
-| `sensevoice-small` | sherpa-onnx offline (ONNX Runtime) | 58 | 1725 | 33.62 | 17.39 | PASS |
-| `whisper-tiny` | sherpa-onnx offline (ONNX Runtime) | 56 | 2068 | 27.08 | 14.51 | PASS |
-| `moonshine-base` | sherpa-onnx offline (ONNX Runtime) | 58 | 2251 | 25.77 | 13.33 | PASS |
-| `zipformer-20m` | sherpa-onnx streaming (ONNX Runtime) | 58 | 3568 | 16.26 | 8.41 | PASS |
-| `whisper-base-en` | sherpa-onnx offline (ONNX Runtime) | 58 | 3917 | 14.81 | 7.66 | PASS |
-| `whisper-base` | sherpa-onnx offline (ONNX Runtime) | 58 | 4038 | 14.36 | 7.43 | PASS |
-| `whisper-small` | sherpa-onnx offline (ONNX Runtime) | 58 | 12329 | 4.70 | 2.43 | PASS |
-| `qwen3-asr-0.6b-onnx` | QwenASR (ONNX Runtime) | 58 | 15881 | 3.65 | 1.89 | PASS |
-| `whisper-large-v3-turbo` | sherpa-onnx offline (ONNX Runtime) | 58 | 17930 | 3.23 | 1.67 | PASS |
-| `android-speech-online` | Android SpeechRecognizer | 5 | 3591 | 1.39 | 8.35 | PASS |
-| `android-speech-offline` | Android SpeechRecognizer | 5 | 3615 | 1.38 | 8.30 | PASS |
-| `cactus-whisper-tiny` | whisper.cpp (GGML) | 58 | 105596 | 0.55 | 0.28 | PASS |
-| `qwen3-asr-0.6b` | qwen-asr (Pure C/NEON) | 58 | 338261 | 0.17 | 0.09 | PASS |
-| `omnilingual-300m` | sherpa-onnx offline (ONNX Runtime) | 0 | 44035 | 0.05 | 0.68 | FAIL |
+| `moonshine-tiny` | sherpa-onnx offline (ONNX Runtime) | 58 | 1363 | 42.55 | 0.05 | PASS |
+| `sensevoice-small` | sherpa-onnx offline (ONNX Runtime) | 58 | 1725 | 33.62 | 0.06 | PASS |
+| `whisper-tiny` | sherpa-onnx offline (ONNX Runtime) | 56 | 2068 | 27.08 | 0.07 | PASS |
+| `moonshine-base` | sherpa-onnx offline (ONNX Runtime) | 58 | 2251 | 25.77 | 0.08 | PASS |
+| `zipformer-20m` | sherpa-onnx streaming (ONNX Runtime) | 58 | 3568 | 16.26 | 0.12 | PASS |
+| `whisper-base-en` | sherpa-onnx offline (ONNX Runtime) | 58 | 3917 | 14.81 | 0.13 | PASS |
+| `whisper-base` | sherpa-onnx offline (ONNX Runtime) | 58 | 4038 | 14.36 | 0.13 | PASS |
+| `whisper-small` | sherpa-onnx offline (ONNX Runtime) | 58 | 12329 | 4.70 | 0.41 | PASS |
+| `qwen3-asr-0.6b-onnx` | QwenASR (ONNX Runtime) | 58 | 15881 | 3.65 | 0.53 | PASS |
+| `whisper-large-v3-turbo` | sherpa-onnx offline (ONNX Runtime) | 58 | 17930 | 3.23 | 0.60 | PASS |
+| `android-speech-online` | Android SpeechRecognizer | 5 | 3591 | 1.39 | 0.12 | PASS |
+| `android-speech-offline` | Android SpeechRecognizer | 5 | 3615 | 1.38 | 0.12 | PASS |
+| `cactus-whisper-tiny` | whisper.cpp (GGML) | 58 | 105596 | 0.55 | 3.52 | PASS |
+| `qwen3-asr-0.6b` | qwen-asr (Pure C/NEON) | 58 | 338261 | 0.17 | 11.28 | PASS |
+| `omnilingual-300m` | sherpa-onnx offline (ONNX Runtime) | 0 | 44035 | 0.05 | 1.47 | FAIL |
 
 #### Reproduce
 
-1. `rm -rf artifacts/e2e/ios/* artifacts/e2e/macos/* artifacts/e2e/android/*`
+1. `rm -rf artifacts/e2e/android/*`
 2. `TARGET_SECONDS=30 scripts/prepare-long-eval-audio.sh`
-3. `EVAL_WAV_PATH=artifacts/benchmarks/long_en_eval.wav scripts/ios-e2e-test.sh`
-4. (Optional) `EVAL_WAV_PATH=artifacts/benchmarks/long_en_eval.wav scripts/macos-e2e-test.sh`
-5. `INSTRUMENT_TIMEOUT_SEC=300 EVAL_WAV_PATH=artifacts/benchmarks/long_en_eval.wav scripts/android-e2e-test.sh`
-6. `python3 scripts/generate-inference-report.py --audio artifacts/benchmarks/long_en_eval.wav --update-readme`
+3. `INSTRUMENT_TIMEOUT_SEC=300 EVAL_WAV_PATH=artifacts/benchmarks/long_en_eval.wav scripts/android-e2e-test.sh`
+4. `python3 scripts/generate-inference-report.py --audio artifacts/benchmarks/long_en_eval.wav --update-readme`
 
 One-command runner: `TARGET_SECONDS=30 scripts/run-inference-benchmarks.sh`
 
