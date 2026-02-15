@@ -9,6 +9,14 @@ All ASR inference runs locally after model download.
   <img src="assets/screenshots/transcription.png" width="270" alt="Transcription" />
 </p>
 
+## Demo (File Transcription)
+
+<p align="center">
+  <img src="assets/demos/file_transcription_demo.gif" width="270" alt="File transcription demo (GIF)" />
+</p>
+
+[MP4 demo video](assets/demos/file_transcription_demo.mp4)
+
 ## Current Scope
 
 - Live transcription with confirmed text plus rolling hypothesis.
@@ -113,4 +121,3 @@ scripts/android-userflow-test.sh
 ## License
 
 Apache License 2.0. See `LICENSE`.
-
