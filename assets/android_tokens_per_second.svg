@@ -1,0 +1,72 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='820' height='500' viewBox='0 0 820 500'>
+<style>
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+.title { font-size: 18px; font-weight: 700; fill: #1f2937; }
+.subtitle { font-size: 11px; fill: #6b7280; }
+.axis { font-size: 10px; fill: #6b7280; }
+.label { font-size: 11px; fill: #374151; }
+.value { font-size: 10px; fill: #374151; font-weight: 600; }
+</style>
+<rect width='100%' height='100%' fill='#ffffff' />
+<text x='260' y='24' class='title'>Android Inference Speed (tok/s)</text>
+<text x='260' y='42' class='subtitle'>Samsung Galaxy S10 (Android 12), 30s English audio, sorted by throughput</text>
+<line x1='260' y1='56' x2='260' y2='470' stroke='#e5e7eb' />
+<line x1='260' y1='470' x2='710' y2='470' stroke='#e5e7eb' />
+<line x1='260.0' y1='470' x2='260.0' y2='475' stroke='#d1d5db' />
+<text x='260.0' y='490' text-anchor='middle' class='axis'>0.0</text>
+<line x1='348.0' y1='470' x2='348.0' y2='475' stroke='#d1d5db' />
+<text x='348.0' y='490' text-anchor='middle' class='axis'>8.5</text>
+<line x1='436.0' y1='470' x2='436.0' y2='475' stroke='#d1d5db' />
+<text x='436.0' y='490' text-anchor='middle' class='axis'>17.0</text>
+<line x1='524.0' y1='470' x2='524.0' y2='475' stroke='#d1d5db' />
+<text x='524.0' y='490' text-anchor='middle' class='axis'>25.5</text>
+<line x1='612.0' y1='470' x2='612.0' y2='475' stroke='#d1d5db' />
+<text x='612.0' y='490' text-anchor='middle' class='axis'>34.0</text>
+<line x1='700.0' y1='470' x2='700.0' y2='475' stroke='#d1d5db' />
+<text x='700.0' y='490' text-anchor='middle' class='axis'>42.5</text>
+<text x='252' y='75' text-anchor='end' class='label'>Moonshine Tiny</text>
+<rect x='260' y='60' width='440.0' height='20' rx='3' fill='#3b82f6' />
+<text x='706.0' y='75' class='value'>42.5 tok/s</text>
+<text x='252' y='101' text-anchor='end' class='label'>SenseVoice Small</text>
+<rect x='260' y='86' width='347.7' height='20' rx='3' fill='#3b82f6' />
+<text x='613.7' y='101' class='value'>33.6 tok/s</text>
+<text x='252' y='127' text-anchor='end' class='label'>Whisper Tiny</text>
+<rect x='260' y='112' width='280.0' height='20' rx='3' fill='#3b82f6' />
+<text x='546.0' y='127' class='value'>27.1 tok/s</text>
+<text x='252' y='153' text-anchor='end' class='label'>Moonshine Base</text>
+<rect x='260' y='138' width='266.5' height='20' rx='3' fill='#3b82f6' />
+<text x='532.5' y='153' class='value'>25.8 tok/s</text>
+<text x='252' y='179' text-anchor='end' class='label'>Zipformer Streaming</text>
+<rect x='260' y='164' width='168.1' height='20' rx='3' fill='#3b82f6' />
+<text x='434.1' y='179' class='value'>16.3 tok/s</text>
+<text x='252' y='205' text-anchor='end' class='label'>Whisper Base (.en)</text>
+<rect x='260' y='190' width='153.1' height='20' rx='3' fill='#3b82f6' />
+<text x='419.1' y='205' class='value'>14.8 tok/s</text>
+<text x='252' y='231' text-anchor='end' class='label'>Whisper Base</text>
+<rect x='260' y='216' width='148.5' height='20' rx='3' fill='#3b82f6' />
+<text x='414.5' y='231' class='value'>14.4 tok/s</text>
+<text x='252' y='257' text-anchor='end' class='label'>Whisper Small</text>
+<rect x='260' y='242' width='48.6' height='20' rx='3' fill='#3b82f6' />
+<text x='314.6' y='257' class='value'>4.7 tok/s</text>
+<text x='252' y='283' text-anchor='end' class='label'>Qwen3 ASR 0.6B (ONNX)</text>
+<rect x='260' y='268' width='37.7' height='20' rx='3' fill='#3b82f6' />
+<text x='303.7' y='283' class='value'>3.6 tok/s</text>
+<text x='252' y='309' text-anchor='end' class='label'>Whisper Turbo</text>
+<rect x='260' y='294' width='33.4' height='20' rx='3' fill='#3b82f6' />
+<text x='299.4' y='309' class='value'>3.2 tok/s</text>
+<text x='252' y='335' text-anchor='end' class='label'>Android Speech (Online)</text>
+<rect x='260' y='320' width='14.4' height='20' rx='3' fill='#3b82f6' />
+<text x='280.4' y='335' class='value'>1.4 tok/s</text>
+<text x='252' y='361' text-anchor='end' class='label'>Android Speech (Offline)</text>
+<rect x='260' y='346' width='14.3' height='20' rx='3' fill='#3b82f6' />
+<text x='280.3' y='361' class='value'>1.4 tok/s</text>
+<text x='252' y='387' text-anchor='end' class='label'>Whisper Tiny (whisper.cpp)</text>
+<rect x='260' y='372' width='5.7' height='20' rx='3' fill='#3b82f6' />
+<text x='271.7' y='387' class='value'>0.6 tok/s</text>
+<text x='252' y='413' text-anchor='end' class='label'>Qwen3 ASR 0.6B (CPU)</text>
+<rect x='260' y='398' width='2.0' height='20' rx='3' fill='#3b82f6' />
+<text x='268.0' y='413' class='value'>0.2 tok/s</text>
+<text x='252' y='439' text-anchor='end' class='label'>Omnilingual 300M</text>
+<rect x='260' y='424' width='2.0' height='20' rx='3' fill='#d1d5db' />
+<text x='268.0' y='439' class='value'>0.1 tok/s</text>
+</svg>

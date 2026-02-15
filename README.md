@@ -33,6 +33,8 @@ All ASR inference runs locally after model download.
 
 Benchmarked on Samsung Galaxy S10 (Android 12, API 31) with 30s JFK test audio (2026-02-15).
 
+![Android Inference Speed](assets/android_tokens_per_second.svg)
+
 Model links point to the runtime distribution used by the app (mostly Hugging Face repos: `csukuangfj/*` sherpa-onnx, `ggerganov/whisper.cpp` GGML, `Qwen/Qwen3-ASR-0.6B` + `jima/*` Qwen ONNX).
 
 | Model | Engine | Size | Languages | Inference | tok/s | RTF | Result |
