@@ -1,7 +1,7 @@
 package com.voiceping.offlinetranscription.model
 
 enum class EngineType { SHERPA_ONNX, SHERPA_ONNX_STREAMING, CACTUS, QWEN_ASR, QWEN_ONNX, ANDROID_SPEECH }
-enum class SherpaModelType { WHISPER, MOONSHINE, SENSE_VOICE, ZIPFORMER_TRANSDUCER, OMNILINGUAL_CTC }
+enum class SherpaModelType { WHISPER, MOONSHINE, SENSE_VOICE, ZIPFORMER_TRANSDUCER, OMNILINGUAL_CTC, PARAKEET_TRANSDUCER }
 enum class CactusModelType { WHISPER }
 
 data class ModelFile(val url: String, val localName: String)
@@ -65,6 +65,9 @@ data class ModelInfo(
         private const val QWEN_ASR_ONNX_BASE_URL =
             "https://huggingface.co/jima/qwen3-asr-0.6b-onnx-int8/resolve/main/"
 
+        private const val PARAKEET_V3_BASE_URL =
+            "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/"
+
         private const val WHISPER_GGML_BASE_URL =
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
 
@@ -100,6 +103,23 @@ data class ModelInfo(
                 files = listOf(
                     ModelFile("${SENSEVOICE_BASE_URL}model.int8.onnx", "model.int8.onnx"),
                     ModelFile("${SENSEVOICE_BASE_URL}tokens.txt", "tokens.txt"),
+                )
+            ),
+            // -- Parakeet TDT (sherpa-onnx offline transducer) --
+            ModelInfo(
+                id = "parakeet-tdt-v3",
+                displayName = "Parakeet TDT 0.6B",
+                engineType = EngineType.SHERPA_ONNX,
+                sherpaModelType = SherpaModelType.PARAKEET_TRANSDUCER,
+                parameterCount = "600M",
+                sizeOnDisk = "~671 MB",
+                description = "Best English WER (2.5%). 25 European languages.",
+                languages = "25 European languages",
+                files = listOf(
+                    ModelFile("${PARAKEET_V3_BASE_URL}encoder.int8.onnx", "encoder.int8.onnx"),
+                    ModelFile("${PARAKEET_V3_BASE_URL}decoder.int8.onnx", "decoder.int8.onnx"),
+                    ModelFile("${PARAKEET_V3_BASE_URL}joiner.int8.onnx", "joiner.int8.onnx"),
+                    ModelFile("${PARAKEET_V3_BASE_URL}tokens.txt", "tokens.txt"),
                 )
             ),
             // -- Whisper (sherpa-onnx ONNX) --

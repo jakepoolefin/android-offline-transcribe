@@ -8,6 +8,7 @@ import com.k2fsa.sherpa.onnx.OfflineOmnilingualAsrCtcModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OfflineSenseVoiceModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
 import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig
 import com.voiceping.offlinetranscription.model.SherpaModelType
 import com.voiceping.offlinetranscription.util.TextNormalizationUtils
@@ -203,6 +204,17 @@ class SherpaOnnxEngine(
                     model = findFile(modelDir, "model"),
                     language = "auto",
                     useInverseTextNormalization = true,
+                ),
+                tokens = tokensPath,
+                numThreads = threads,
+                debug = false,
+                provider = provider,
+            )
+            SherpaModelType.PARAKEET_TRANSDUCER -> OfflineModelConfig(
+                transducer = OfflineTransducerModelConfig(
+                    encoder = findFile(modelDir, "encoder"),
+                    decoder = findFile(modelDir, "decoder"),
+                    joiner = findFile(modelDir, "joiner"),
                 ),
                 tokens = tokensPath,
                 numThreads = threads,

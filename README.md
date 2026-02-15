@@ -29,9 +29,17 @@ All ASR inference runs locally after model download.
 
 ## Supported Models & Benchmarks
 
-15 models across 6 engine types. Defined in `ModelInfo.kt`.
+16 models across 6 engine types. Defined in `ModelInfo.kt`.
 
-Benchmarked on Samsung Galaxy S10 (Android 12, API 31) with 30s JFK test audio (2026-02-15).
+Benchmarked on Samsung Galaxy S10 (Android 12, API 31) on 2026-02-15.
+
+**Test audio**: 30-second WAV (16 kHz, mono, PCM 16-bit) of JFK's 1961 inaugural address ("ask not what your country can do for you"), looped from the 11-second `whisper.cpp/samples/jfk.wav` clip to reach the target duration. The file is pushed to the device via `adb` before each run.
+
+**Metrics**:
+- **Inference** — wall-clock time from `engine.transcribe()` call to result, measured with `System.nanoTime()`. Excludes model download and load time.
+- **tok/s** — output words per second of inference time (`total_words / elapsed_seconds`). Higher is faster.
+- **RTF** — Real Time Factor (`inference_time / audio_duration`). Values below 1.0 mean faster than real-time.
+- **Result** — PASS if the transcript contains expected keywords from the JFK speech; FAIL otherwise.
 
 ![Android Inference Speed](assets/android_tokens_per_second.svg)
 
@@ -41,10 +49,11 @@ Model links point to the runtime distribution used by the app (mostly Hugging Fa
 |---|---|---|---|---|---|---|---|
 | [Moonshine Tiny](https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-tiny-en-int8) | sherpa-onnx | ~125 MB | English | 1,363 ms | 42.55 | 0.05 | PASS |
 | [SenseVoice Small](https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17) | sherpa-onnx | ~240 MB | zh/en/ja/ko/yue | 1,725 ms | 33.62 | 0.06 | PASS |
+| [Parakeet TDT 0.6B](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8) | sherpa-onnx | ~671 MB | 25 European | — | — | — | NEW |
 | [Whisper Tiny](https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny) | sherpa-onnx | ~100 MB | 99 languages | 2,068 ms | 27.08 | 0.07 | PASS |
 | [Moonshine Base](https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-base-en-int8) | sherpa-onnx | ~290 MB | English | 2,251 ms | 25.77 | 0.08 | PASS |
-| Android Speech (Offline) | SpeechRecognizer | Built-in | 50+ languages | 3,615 ms | 1.38 | 0.12 | PASS [2] |
-| Android Speech (Online) | SpeechRecognizer | Built-in | 100+ languages | 3,591 ms | 1.39 | 0.12 | PASS [2] |
+| [Android Speech (Offline)](https://developer.android.com/reference/android/speech/SpeechRecognizer) | SpeechRecognizer | Built-in | 50+ languages | 3,615 ms | 1.38 | 0.12 | PASS [2] |
+| [Android Speech (Online)](https://developer.android.com/reference/android/speech/SpeechRecognizer) | SpeechRecognizer | Built-in | 100+ languages | 3,591 ms | 1.39 | 0.12 | PASS [2] |
 | [Zipformer Streaming](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26) | sherpa-onnx streaming | ~73 MB | English | 3,568 ms | 16.26 | 0.12 | PASS |
 | [Whisper Base (.en)](https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base.en) | sherpa-onnx | ~160 MB | English | 3,917 ms | 14.81 | 0.13 | PASS |
 | [Whisper Base](https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base) | sherpa-onnx | ~160 MB | 99 languages | 4,038 ms | 14.36 | 0.13 | PASS |
@@ -55,15 +64,15 @@ Model links point to the runtime distribution used by the app (mostly Hugging Fa
 | [Qwen3 ASR 0.6B (CPU)](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | Pure C/NEON | ~1.8 GB | 30 languages | 338,261 ms | 0.17 | 11.28 | PASS [3] |
 | [Omnilingual 300M](https://huggingface.co/csukuangfj2/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12) | sherpa-onnx | ~365 MB | 1,600+ languages | 44,035 ms | 0.05 | 1.47 | FAIL [1] |
 
-RTF = Real Time Factor (lower is faster; <1 = faster than real-time). tok/s = output tokens per second.
-
 > [1] Omnilingual MMS CTC 300M outputs wrong language for English — known model limitation on both iOS and Android. CTC model does not support language conditioning ([sherpa-onnx #2812](https://github.com/k2-fsa/sherpa-onnx/issues/2812)).
 >
 > [2] Android Speech uses acoustic loopback on API <33 (play WAV through speaker while SpeechRecognizer listens). Partial transcript — environment-dependent. API 33+ supports direct file input via `EXTRA_AUDIO_SOURCE`.
 >
 > [3] Qwen3 ASR 0.6B CPU runs on this device but is extremely slow (RTF ~11). Prefer the ONNX INT8 variant on older phones.
 
-**14/15 PASS, 1 FAIL (known limitation), 0 OOM**
+**14/15 PASS, 1 FAIL (known limitation), 1 NEW (not yet benchmarked), 0 OOM**
+
+> **Want to see a new model benchmarked?** If there is an offline ASR model you would like added or benchmarked on a specific device, please [open an issue](https://github.com/voiceping-ai/android-offline-transcribe/issues/new) with the model name and target hardware. Community contributions of benchmark results on different devices are also welcome.
 
 ## Architecture
 
@@ -105,7 +114,7 @@ cd android-offline-transcribe/VoicePingAndroidOfflineTranscribe
 cd VoicePingAndroidOfflineTranscribe
 ./gradlew testDebugUnitTest
 
-# E2E benchmark (all 15 models)
+# E2E benchmark (all 16 models)
 bash /tmp/android-benchmark.sh
 
 # CI and automation
@@ -120,7 +129,7 @@ All audio recording and transcription run locally on device. The app makes **no 
 
 | Connection | Destination | When | Data Sent |
 |---|---|---|---|
-| sherpa-onnx model download | `huggingface.co/csukuangfj/*` | User selects a Moonshine, SenseVoice, Whisper (sherpa), Zipformer, or Omnilingual model | None (HTTPS GET only) |
+| sherpa-onnx model download | `huggingface.co/csukuangfj/*` | User selects a Moonshine, SenseVoice, Parakeet, Whisper (sherpa), Zipformer, or Omnilingual model | None (HTTPS GET only) |
 | whisper.cpp model download | `huggingface.co/ggerganov/whisper.cpp` | User selects Whisper Tiny (whisper.cpp backend) | None (HTTPS GET only) |
 | Qwen3 ASR download (CPU) | `huggingface.co/Qwen/Qwen3-ASR-0.6B` | User selects Qwen3 ASR CPU | None (HTTPS GET only) |
 | Qwen3 ASR download (ONNX) | `huggingface.co/jima/qwen3-asr-0.6b-onnx-int8` | User selects Qwen3 ASR ONNX | None (HTTPS GET only) |

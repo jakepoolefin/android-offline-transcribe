@@ -8,8 +8,8 @@ import kotlin.test.assertTrue
 class ModelInfoTest {
 
     @Test
-    fun availableModels_hasThirteenEntries() {
-        assertEquals(15, ModelInfo.availableModels.size)
+    fun availableModels_hasSixteenEntries() {
+        assertEquals(16, ModelInfo.availableModels.size)
     }
 
     @Test
@@ -30,6 +30,7 @@ class ModelInfoTest {
         assertTrue("moonshine-tiny" in ids)
         assertTrue("moonshine-base" in ids)
         assertTrue("sensevoice-small" in ids)
+        assertTrue("parakeet-tdt-v3" in ids)
         assertTrue("omnilingual-300m" in ids)
         assertTrue("zipformer-20m" in ids)
         assertTrue("cactus-whisper-tiny" in ids)
@@ -225,11 +226,11 @@ class ModelInfoTest {
     }
 
     @Test
-    fun modelsByEngine_sherpaOnnx_hasNineModels() {
+    fun modelsByEngine_sherpaOnnx_hasTenModels() {
         val sherpaModels = ModelInfo.modelsByEngine[EngineType.SHERPA_ONNX]
         assertNotNull(sherpaModels)
-        // 5 whisper + 2 moonshine + 1 sensevoice + 1 omnilingual = 9
-        assertEquals(9, sherpaModels.size)
+        // 5 whisper + 2 moonshine + 1 sensevoice + 1 omnilingual + 1 parakeet = 10
+        assertEquals(10, sherpaModels.size)
     }
 
     @Test
@@ -283,8 +284,8 @@ class ModelInfoTest {
     }
 
     @Test
-    fun sherpaModelType_hasFiveValues() {
-        assertEquals(5, SherpaModelType.entries.size)
+    fun sherpaModelType_hasSixValues() {
+        assertEquals(6, SherpaModelType.entries.size)
     }
 
     @Test
