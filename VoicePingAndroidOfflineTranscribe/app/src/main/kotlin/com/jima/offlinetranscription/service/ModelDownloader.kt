@@ -136,7 +136,12 @@ class ModelDownloader(private val modelsDir: File) {
             // Rename temp to final
             if (!tempFile.renameTo(targetFile)) {
                 tempFile.copyTo(targetFile, overwrite = true)
-                tempFile.safeDelete()
+                if (targetFile.exists() && targetFile.length() == tempFile.length()) {
+                    tempFile.safeDelete()
+                } else {
+                    targetFile.safeDelete()
+                    throw java.io.IOException("Failed to finalize ${modelFile.localName}: copy verification failed")
+                }
             }
         }
         emit(1.0f)
