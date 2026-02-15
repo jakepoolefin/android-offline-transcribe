@@ -3,6 +3,12 @@
 Android app for on-device transcription with optional on-device translation.
 All ASR inference runs locally after model download.
 
+<p align="center">
+  <img src="assets/screenshots/model_setup.png" width="270" alt="Model Setup" />
+  &nbsp;&nbsp;
+  <img src="assets/screenshots/transcription.png" width="270" alt="Transcription" />
+</p>
+
 ## Current Scope
 
 - Live transcription with confirmed text plus rolling hypothesis.
