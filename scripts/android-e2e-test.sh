@@ -49,6 +49,7 @@ ALL_MODELS=(
     "cactus-whisper-tiny"
     "qwen3-asr-0.6b"
     "qwen3-asr-0.6b-onnx"
+    "parakeet-tdt-v3"
     "android-speech-offline"
     "android-speech-online"
 )
@@ -69,6 +70,7 @@ TEST_METHODS=(
     cactus-whisper-tiny test_cactusWhisperTiny
     qwen3-asr-0.6b test_qwen3Asr06bCpu
     qwen3-asr-0.6b-onnx test_qwen3Asr06bOnnx
+    parakeet-tdt-v3 test_parakeetTdtV3
     android-speech-offline test_androidSpeechOffline
     android-speech-online test_androidSpeechOnline
 )
@@ -130,6 +132,7 @@ instrument_timeout_for_model() {
         qwen3-asr-0.6b|qwen3-asr-0.6b-onnx) echo 7200 ;;
         cactus-whisper-tiny) echo 1800 ;;
         omnilingual-300m) echo 2400 ;;
+        parakeet-tdt-v3) echo 1800 ;;
         whisper-base|whisper-base-en) echo 1200 ;;
         *) echo "$INSTRUMENT_TIMEOUT_SEC" ;;
     esac

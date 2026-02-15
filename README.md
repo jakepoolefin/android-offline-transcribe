@@ -51,9 +51,9 @@ Model links point to the runtime distribution used by the app (mostly Hugging Fa
 |---|---|---|---|---|---|---|---|
 | [Moonshine Tiny](https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-tiny-en-int8) | sherpa-onnx | ~125 MB | English | 1,363 ms | 42.55 | 0.05 | ✅ PASS |
 | [SenseVoice Small](https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17) | sherpa-onnx | ~240 MB | zh/en/ja/ko/yue | 1,725 ms | 33.62 | 0.06 | ✅ PASS |
-| [Parakeet TDT 0.6B](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8) | sherpa-onnx | ~671 MB | 25 European | — | — | — | 🆕 NEW |
 | [Whisper Tiny](https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny) | sherpa-onnx | ~100 MB | 99 languages | 2,068 ms | 27.08 | 0.07 | ✅ PASS |
 | [Moonshine Base](https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-base-en-int8) | sherpa-onnx | ~290 MB | English | 2,251 ms | 25.77 | 0.08 | ✅ PASS |
+| [Parakeet TDT 0.6B](https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8) | sherpa-onnx | ~671 MB | 25 European | 2,841 ms | 20.41 | 0.09 | ✅ PASS |
 | [Android Speech (Offline)](https://developer.android.com/reference/android/speech/SpeechRecognizer) | SpeechRecognizer | Built-in | 50+ languages | 3,615 ms | 1.38 | 0.12 | ✅ PASS [2] |
 | [Android Speech (Online)](https://developer.android.com/reference/android/speech/SpeechRecognizer) | SpeechRecognizer | Built-in | 100+ languages | 3,591 ms | 1.39 | 0.12 | ✅ PASS [2] |
 | [Zipformer Streaming](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26) | sherpa-onnx streaming | ~73 MB | English | 3,568 ms | 16.26 | 0.12 | ✅ PASS |
@@ -72,7 +72,7 @@ Model links point to the runtime distribution used by the app (mostly Hugging Fa
 >
 > [3] Qwen3 ASR 0.6B CPU runs on this device but is extremely slow (RTF ~11). Prefer the ONNX INT8 variant on older phones.
 
-**14/16 ✅ PASS, 1 ❌ FAIL (known limitation), 1 🆕 NEW (not yet benchmarked), 0 OOM**
+**15/16 ✅ PASS, 1 ❌ FAIL (known limitation), 0 OOM**
 
 > **Want to see a new model benchmarked?** If there is an offline ASR model you would like added or benchmarked on a specific device, please [open an issue](https://github.com/voiceping-ai/android-offline-transcribe/issues/new) with the model name and target hardware. Community contributions of benchmark results on different devices are also welcome.
 
