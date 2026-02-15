@@ -114,11 +114,21 @@ scripts/android-e2e-test.sh
 scripts/android-userflow-test.sh
 ```
 
-## Privacy
+## Privacy & Network Usage
 
-- Audio and transcription are processed locally on device.
-- Network is used for model and language-pack downloads only.
-- Android Speech (Online) mode uses Google cloud services when selected.
+All audio recording and transcription run locally on device. The app makes **no analytics, telemetry, or crash-reporting calls**. Network is used only for model downloads and one optional cloud mode, listed below:
+
+| Connection | Destination | When | Data Sent |
+|---|---|---|---|
+| sherpa-onnx model download | `huggingface.co/csukuangfj/*` | User selects a Moonshine, SenseVoice, Whisper (sherpa), Zipformer, or Omnilingual model | None (HTTPS GET only) |
+| whisper.cpp model download | `huggingface.co/ggerganov/whisper.cpp` | User selects Whisper Tiny (whisper.cpp backend) | None (HTTPS GET only) |
+| Qwen3 ASR download (CPU) | `huggingface.co/Qwen/Qwen3-ASR-0.6B` | User selects Qwen3 ASR CPU | None (HTTPS GET only) |
+| Qwen3 ASR download (ONNX) | `huggingface.co/jima/qwen3-asr-0.6b-onnx-int8` | User selects Qwen3 ASR ONNX | None (HTTPS GET only) |
+| ML Kit translation model | Google servers | User enables translation and selects a language pair | None (model download only, ~30 MB per pair) |
+| Android Speech (Online) | Google Cloud Speech | User selects `android-speech-online` model | Audio sent to Google for recognition |
+| Android Speech (Offline) | None | User selects `android-speech-offline` model | None — fully on-device |
+
+All model downloads are user-initiated (on model selection), cached locally, and never re-downloaded once present. No user audio, transcription text, or usage data leaves the device — except when the user explicitly selects **Android Speech (Online)**, which sends audio to Google Cloud for recognition.
 
 ## License
 
