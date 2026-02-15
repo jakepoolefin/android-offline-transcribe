@@ -1,4 +1,4 @@
-# VoicePing Android Offline Transcribe
+# Android Offline Transcribe
 
 Android app for on-device transcription with optional on-device translation.
 All ASR inference runs locally after model download.
@@ -27,8 +27,8 @@ Model links point to the runtime distribution used by the app (mostly Hugging Fa
 | [SenseVoice Small](https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17) | sherpa-onnx | ~240 MB | zh/en/ja/ko/yue | 1,725 ms | 33.62 | 0.06 | PASS |
 | [Whisper Tiny](https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny) | sherpa-onnx | ~100 MB | 99 languages | 2,068 ms | 27.08 | 0.07 | PASS |
 | [Moonshine Base](https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-base-en-int8) | sherpa-onnx | ~290 MB | English | 2,251 ms | 25.77 | 0.08 | PASS |
-| Android Speech (Offline) | SpeechRecognizer | Built-in | 50+ languages | 3,615 ms | 1.38 | 0.12 | PASS** |
-| Android Speech (Online) | SpeechRecognizer | Built-in | 100+ languages | 3,591 ms | 1.39 | 0.12 | PASS** |
+| Android Speech (Offline) | SpeechRecognizer | Built-in | 50+ languages | 3,615 ms | 1.38 | 0.12 | PASS [2] |
+| Android Speech (Online) | SpeechRecognizer | Built-in | 100+ languages | 3,591 ms | 1.39 | 0.12 | PASS [2] |
 | [Zipformer Streaming](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26) | sherpa-onnx streaming | ~73 MB | English | 3,568 ms | 16.26 | 0.12 | PASS |
 | [Whisper Base (.en)](https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base.en) | sherpa-onnx | ~160 MB | English | 3,917 ms | 14.81 | 0.13 | PASS |
 | [Whisper Base](https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base) | sherpa-onnx | ~160 MB | 99 languages | 4,038 ms | 14.36 | 0.13 | PASS |
@@ -36,14 +36,16 @@ Model links point to the runtime distribution used by the app (mostly Hugging Fa
 | [Qwen3 ASR 0.6B (ONNX)](https://huggingface.co/jima/qwen3-asr-0.6b-onnx-int8) | ONNX Runtime INT8 | ~1.9 GB | 30 languages | 15,881 ms | 3.65 | 0.53 | PASS |
 | [Whisper Turbo](https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo) | sherpa-onnx | ~1.0 GB | 99 languages | 17,930 ms | 3.23 | 0.60 | PASS |
 | [Whisper Tiny (whisper.cpp)](https://huggingface.co/ggerganov/whisper.cpp) | whisper.cpp GGML | ~31 MB | 99 languages | 105,596 ms | 0.55 | 3.52 | PASS |
-| [Qwen3 ASR 0.6B (CPU)](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | Pure C/NEON | ~1.8 GB | 30 languages | 338,261 ms | 0.17 | 11.28 | PASS*** |
-| [Omnilingual 300M](https://huggingface.co/csukuangfj2/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12) | sherpa-onnx | ~365 MB | 1,600+ languages | 44,035 ms | 0.05 | 1.47 | FAIL* |
+| [Qwen3 ASR 0.6B (CPU)](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | Pure C/NEON | ~1.8 GB | 30 languages | 338,261 ms | 0.17 | 11.28 | PASS [3] |
+| [Omnilingual 300M](https://huggingface.co/csukuangfj2/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12) | sherpa-onnx | ~365 MB | 1,600+ languages | 44,035 ms | 0.05 | 1.47 | FAIL [1] |
 
 RTF = Real Time Factor (lower is faster; <1 = faster than real-time). tok/s = output tokens per second.
 
-\* Omnilingual MMS CTC 300M outputs wrong language for English — known model limitation on both iOS and Android. CTC model does not support language conditioning ([sherpa-onnx #2812](https://github.com/k2-fsa/sherpa-onnx/issues/2812)).
-\*\* Android Speech uses acoustic loopback on API <33 (play WAV through speaker while SpeechRecognizer listens). Partial transcript — environment-dependent. API 33+ supports direct file input via `EXTRA_AUDIO_SOURCE`.
-\*\*\* Qwen3 ASR 0.6B CPU runs on this device but is extremely slow (RTF ~11). Prefer the ONNX INT8 variant on older phones.
+> [1] Omnilingual MMS CTC 300M outputs wrong language for English — known model limitation on both iOS and Android. CTC model does not support language conditioning ([sherpa-onnx #2812](https://github.com/k2-fsa/sherpa-onnx/issues/2812)).
+>
+> [2] Android Speech uses acoustic loopback on API <33 (play WAV through speaker while SpeechRecognizer listens). Partial transcript — environment-dependent. API 33+ supports direct file input via `EXTRA_AUDIO_SOURCE`.
+>
+> [3] Qwen3 ASR 0.6B CPU runs on this device but is extremely slow (RTF ~11). Prefer the ONNX INT8 variant on older phones.
 
 **14/15 PASS, 1 FAIL (known limitation), 0 OOM**
 
@@ -53,7 +55,7 @@ RTF = Real Time Factor (lower is faster; <1 = faster than real-time). tok/s = ou
 - Engines (6 backends):
   - `SherpaOnnxEngine` — Moonshine, SenseVoice, Whisper, Omnilingual via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) ONNX Runtime
   - `SherpaOnnxStreamingEngine` — Zipformer via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) ONNX Runtime (100 ms chunks)
-  - `CactusEngine` — Whisper via [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (GGML, via JNI)
+  - `WhisperCppEngine` — Whisper via [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (GGML, via JNI)
   - `QwenASREngine` — Qwen3 ASR via [antirez/qwen-asr](https://github.com/antirez/qwen-asr) (Pure C, ARM NEON)
   - `QwenOnnxEngine` — Qwen3 ASR INT8 via ONNX Runtime (uses ORT from sherpa-onnx)
   - `AndroidSpeechEngine` — Android [SpeechRecognizer](https://developer.android.com/reference/android/speech/SpeechRecognizer) (online/offline)
