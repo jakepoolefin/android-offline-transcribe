@@ -6,7 +6,7 @@
 #
 # Env:
 #   TARGET_SECONDS (default: 30)  -> length of generated English fixture
-#   RUN_IOS (default: 1)
+#   RUN_IOS (default: 0)
 #   RUN_ANDROID (default: 1)
 #   IOS_XCUITEST (default: 0)     -> set to 1 to use --xcuitest mode
 
@@ -30,9 +30,7 @@ echo "Run Android:    $RUN_ANDROID"
 echo "iOS XCUITest:   $IOS_XCUITEST"
 echo ""
 
-TARGET_SECONDS="$TARGET_SECONDS" "$SCRIPT_DIR/prepare-long-eval-audio.sh" \
-    "$PROJECT_DIR/artifacts/benchmarks/seed_en_eval.wav" \
-    "$AUDIO_FIXTURE"
+TARGET_SECONDS="$TARGET_SECONDS" "$SCRIPT_DIR/prepare-long-eval-audio.sh"
 
 if [ "$RUN_IOS" = "1" ]; then
     echo ""

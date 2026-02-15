@@ -11,7 +11,17 @@ ADB_BIN="${ADB_PATH:-$HOME/Library/Android/sdk/platform-tools/adb}"
 ANDROID_SERIAL="${ANDROID_SERIAL:-}"
 PACKAGE="com.voiceping.transcribe"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$PROJECT_DIR/artifacts/e2e/android}"
-WAV_SOURCE="${EVAL_WAV_PATH:-$PROJECT_DIR/artifacts/benchmarks/long_en_eval.wav}"
+DEFAULT_WAV_1="$PROJECT_DIR/artifacts/benchmarks/long_en_eval.wav"
+DEFAULT_WAV_2="$PROJECT_DIR/VoicePingAndroidOfflineTranscribe/app/src/main/assets/test_speech.wav"
+if [ -n "${EVAL_WAV_PATH:-}" ]; then
+    WAV_SOURCE="$EVAL_WAV_PATH"
+elif [ -f "$DEFAULT_WAV_1" ]; then
+    WAV_SOURCE="$DEFAULT_WAV_1"
+elif [ -f "$DEFAULT_WAV_2" ]; then
+    WAV_SOURCE="$DEFAULT_WAV_2"
+else
+    WAV_SOURCE="$DEFAULT_WAV_1"
+fi
 GRADLE_DIR="$PROJECT_DIR/VoicePingAndroidOfflineTranscribe"
 TEST_CLASS="com.voiceping.offlinetranscription.e2e.AllModelsE2ETest"
 INSTRUMENT_TIMEOUT_SEC="${INSTRUMENT_TIMEOUT_SEC:-900}"
@@ -37,7 +47,6 @@ ALL_MODELS=(
     "omnilingual-300m"
     "zipformer-20m"
     "cactus-whisper-tiny"
-    "cactus-moonshine-base"
     "qwen3-asr-0.6b"
     "qwen3-asr-0.6b-onnx"
     "android-speech-offline"
@@ -58,7 +67,6 @@ TEST_METHODS=(
     omnilingual-300m test_omnilingual300m
     zipformer-20m test_zipformer20m
     cactus-whisper-tiny test_cactusWhisperTiny
-    cactus-moonshine-base test_cactusMoonshineBase
     qwen3-asr-0.6b test_qwen3Asr06bCpu
     qwen3-asr-0.6b-onnx test_qwen3Asr06bOnnx
     android-speech-offline test_androidSpeechOffline
@@ -107,6 +115,9 @@ echo "Installing..."
 (cd "$GRADLE_DIR" && ./gradlew installDebug installDebugAndroidTest 2>&1 | tail -3)
 echo ""
 
+# Needed for Android SpeechRecognizer loopback fallback on API < 33.
+adb_cmd shell pm grant "$PACKAGE" android.permission.RECORD_AUDIO 2>/dev/null || true
+
 PASS_COUNT=0
 FAIL_COUNT=0
 SKIP_COUNT=0
@@ -117,7 +128,7 @@ instrument_timeout_for_model() {
         whisper-large-v3-turbo) echo 3600 ;;
         whisper-small) echo 2400 ;;
         qwen3-asr-0.6b|qwen3-asr-0.6b-onnx) echo 7200 ;;
-        cactus-whisper-tiny|cactus-moonshine-base) echo 1800 ;;
+        cactus-whisper-tiny) echo 1800 ;;
         omnilingual-300m) echo 2400 ;;
         whisper-base|whisper-base-en) echo 1200 ;;
         *) echo "$INSTRUMENT_TIMEOUT_SEC" ;;

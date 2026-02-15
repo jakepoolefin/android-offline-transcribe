@@ -1363,7 +1363,14 @@ class WhisperEngine(
                 val startTime = System.nanoTime()
                 val numThreads = computeInferenceThreads()
                 Log.i("WhisperEngine", "transcribeFile: starting transcription with $numThreads threads")
-                val segments = engine.transcribe(audioSamples, numThreads, languageHint)
+                val segments = if (engine is AndroidSpeechEngine && Build.VERSION.SDK_INT < 33 && e2eLocked) {
+                    // On API < 33, SpeechRecognizer can't accept file audio directly.
+                    // For E2E benchmarks, attempt acoustic loopback (speaker -> mic).
+                    Log.i("WhisperEngine", "transcribeFile: Android Speech API<33, using acoustic loopback")
+                    engine.transcribeViaAcousticLoopback(audioSamples, languageHint)
+                } else {
+                    engine.transcribe(audioSamples, numThreads, languageHint)
+                }
 
                 val elapsed = (System.nanoTime() - startTime) / 1_000_000_000.0
                 val totalWords = segments.sumOf { it.text.split(" ").size }
@@ -1392,7 +1399,7 @@ class WhisperEngine(
                     model.engineType == EngineType.ANDROID_SPEECH &&
                         Build.VERSION.SDK_INT < 33 &&
                         renderedText.isBlank() ->
-                        "Android Speech file transcription unavailable on device API ${Build.VERSION.SDK_INT}"
+                        "Android Speech returned empty transcript on device API ${Build.VERSION.SDK_INT} (loopback may be blocked by echo cancellation; API 33+ supports direct file input)"
                     else -> null
                 }
                 val skipped = skipReason != null

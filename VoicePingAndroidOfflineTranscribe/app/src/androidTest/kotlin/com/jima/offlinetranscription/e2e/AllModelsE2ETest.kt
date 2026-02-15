@@ -35,7 +35,7 @@ class AllModelsE2ETest {
     // Per-model download+load+transcribe timeout (ms)
     // whisper.cpp on emulator is very slow — whisper-small needs ~500s, large-turbo ~1800s
     private fun timeout(modelId: String): Long = when {
-        modelId.contains("android-speech") -> 60_000L // 1 min — system-provided, no download
+        modelId.contains("android-speech") -> 120_000L // system-provided, no download; may run in real-time on API<33 (loopback)
         modelId.contains("qwen") -> 600_000L     // 10 min — 600M+ model, ORT fallback adds time
         modelId.contains("cactus") -> 600_000L   // 10 min — download + init may exceed the default 2m on slow networks
         modelId.contains("large") -> 3_600_000L  // 60 min — 809M model on older phones
@@ -123,7 +123,9 @@ class AllModelsE2ETest {
         takeScreenshot(evidenceDir, "02_model_loaded.png")
         Log.i(TAG, "[$modelId] Screenshot 02 captured")
 
-        // 5. Wait for result.json or E2E overlay to appear
+        // 5. Wait for result.json to appear.
+        // NOTE: The on-screen "E2E EVIDENCE" overlay can render before the file write finishes,
+        // so we only treat the test as complete when result.json exists on disk.
         // whisper.cpp on emulator is very slow — whisper-small needs ~600s for inference
         val evidenceTimeout = timeoutMs
         val startWait = System.currentTimeMillis()
@@ -134,13 +136,6 @@ class AllModelsE2ETest {
             if (File(resultSrcPublic).exists() || File(resultSrcPrivate).exists()) {
                 resultExists = true
                 Log.i(TAG, "[$modelId] result.json detected")
-                break
-            }
-            // Check for E2E evidence overlay in UI
-            val overlayElement = device.findObject(By.textContains("E2E EVIDENCE"))
-            if (overlayElement != null) {
-                Log.i(TAG, "[$modelId] E2E overlay detected")
-                resultExists = true
                 break
             }
             Thread.sleep(2000)
