@@ -36,7 +36,7 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Ar
 <text x='252' y='153' text-anchor='end' class='label'>Moonshine Base</text>
 <rect x='260' y='138' width='266.5' height='20' rx='3' fill='#3b82f6' />
 <text x='532.5' y='153' class='value'>25.8 tok/s</text>
-<text x='252' y='179' text-anchor='end' class='label'>Parakeet TDT 0.6B</text>
+<text x='252' y='179' text-anchor='end' class='label'>Parakeet TDT 0.6B v3</text>
 <rect x='260' y='164' width='211.2' height='20' rx='3' fill='#3b82f6' />
 <text x='477.2' y='179' class='value'>20.4 tok/s</text>
 <text x='252' y='205' text-anchor='end' class='label'>Zipformer Streaming</text>
