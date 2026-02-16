@@ -5,6 +5,10 @@
 Android app for on-device transcription with optional on-device translation.
 All ASR inference runs locally after model download.
 
+### Benchmark (Samsung Galaxy S10)
+
+![Android Inference Speed](assets/android_tokens_per_second.svg)
+
 <p align="center">
   <img src="assets/screenshots/model_setup.png" width="270" alt="Model Setup" />
   &nbsp;&nbsp;
@@ -42,8 +46,6 @@ Benchmarked on Samsung Galaxy S10 (Android 12, API 31) on 2026-02-15.
 - **tok/s** — output words per second of inference time (`total_words / elapsed_seconds`). Higher is faster.
 - **RTF** — Real Time Factor (`inference_time / audio_duration`). Values below 1.0 mean faster than real-time.
 - **Result** — PASS if the transcript contains expected keywords from the JFK speech; FAIL otherwise.
-
-![Android Inference Speed](assets/android_tokens_per_second.svg)
 
 Model links point to the runtime distribution used by the app (mostly Hugging Face repos: `csukuangfj/*` sherpa-onnx, `ggerganov/whisper.cpp` GGML, `Qwen/Qwen3-ASR-0.6B` + `jima/*` Qwen ONNX).
 

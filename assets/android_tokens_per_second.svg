@@ -1,75 +1,148 @@
-<svg xmlns='http://www.w3.org/2000/svg' width='820' height='530' viewBox='0 0 820 530'>
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="600" viewBox="-80 0 1000 600">
+<defs>
+  <linearGradient id="g-sherpa" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#34d399"/><stop offset="100%" stop-color="#059669"/>
+  </linearGradient>
+  <linearGradient id="g-stream" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#0891b2"/>
+  </linearGradient>
+  <linearGradient id="g-cactus" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#fbbf24"/><stop offset="100%" stop-color="#d97706"/>
+  </linearGradient>
+  <linearGradient id="g-qwen-cpu" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#f472b6"/><stop offset="100%" stop-color="#db2777"/>
+  </linearGradient>
+  <linearGradient id="g-qwen-onnx" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#fb923c"/><stop offset="100%" stop-color="#ea580c"/>
+  </linearGradient>
+  <linearGradient id="g-system" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#4f46e5"/>
+  </linearGradient>
+  <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#06b6d4"/>
+  </linearGradient>
+</defs>
 <style>
-text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
-.title { font-size: 18px; font-weight: 700; fill: #1f2937; }
-.subtitle { font-size: 11px; fill: #6b7280; }
-.axis { font-size: 10px; fill: #6b7280; }
-.label { font-size: 11px; fill: #374151; }
-.value { font-size: 10px; fill: #374151; font-weight: 600; }
+  text { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Helvetica, sans-serif; }
 </style>
-<rect width='100%' height='100%' fill='#ffffff' />
-<text x='260' y='24' class='title'>Android Inference Speed (tok/s)</text>
-<text x='260' y='42' class='subtitle'>Samsung Galaxy S10 (Android 12), 30s English audio, sorted by throughput</text>
-<line x1='260' y1='56' x2='260' y2='496' stroke='#e5e7eb' />
-<line x1='260' y1='496' x2='710' y2='496' stroke='#e5e7eb' />
-<line x1='260.0' y1='496' x2='260.0' y2='501' stroke='#d1d5db' />
-<text x='260.0' y='516' text-anchor='middle' class='axis'>0.0</text>
-<line x1='348.0' y1='496' x2='348.0' y2='501' stroke='#d1d5db' />
-<text x='348.0' y='516' text-anchor='middle' class='axis'>8.5</text>
-<line x1='436.0' y1='496' x2='436.0' y2='501' stroke='#d1d5db' />
-<text x='436.0' y='516' text-anchor='middle' class='axis'>17.0</text>
-<line x1='524.0' y1='496' x2='524.0' y2='501' stroke='#d1d5db' />
-<text x='524.0' y='516' text-anchor='middle' class='axis'>25.5</text>
-<line x1='612.0' y1='496' x2='612.0' y2='501' stroke='#d1d5db' />
-<text x='612.0' y='516' text-anchor='middle' class='axis'>34.0</text>
-<line x1='700.0' y1='496' x2='700.0' y2='501' stroke='#d1d5db' />
-<text x='700.0' y='516' text-anchor='middle' class='axis'>42.5</text>
-<text x='252' y='75' text-anchor='end' class='label'>Moonshine Tiny</text>
-<rect x='260' y='60' width='440.0' height='20' rx='3' fill='#3b82f6' />
-<text x='706.0' y='75' class='value'>42.5 tok/s</text>
-<text x='252' y='101' text-anchor='end' class='label'>SenseVoice Small</text>
-<rect x='260' y='86' width='347.7' height='20' rx='3' fill='#3b82f6' />
-<text x='613.7' y='101' class='value'>33.6 tok/s</text>
-<text x='252' y='127' text-anchor='end' class='label'>Whisper Tiny</text>
-<rect x='260' y='112' width='280.0' height='20' rx='3' fill='#3b82f6' />
-<text x='546.0' y='127' class='value'>27.1 tok/s</text>
-<text x='252' y='153' text-anchor='end' class='label'>Moonshine Base</text>
-<rect x='260' y='138' width='266.5' height='20' rx='3' fill='#3b82f6' />
-<text x='532.5' y='153' class='value'>25.8 tok/s</text>
-<text x='252' y='179' text-anchor='end' class='label'>Parakeet TDT 0.6B v3</text>
-<rect x='260' y='164' width='211.2' height='20' rx='3' fill='#3b82f6' />
-<text x='477.2' y='179' class='value'>20.4 tok/s</text>
-<text x='252' y='205' text-anchor='end' class='label'>Zipformer Streaming</text>
-<rect x='260' y='190' width='168.1' height='20' rx='3' fill='#3b82f6' />
-<text x='434.1' y='205' class='value'>16.3 tok/s</text>
-<text x='252' y='231' text-anchor='end' class='label'>Whisper Base (.en)</text>
-<rect x='260' y='216' width='153.1' height='20' rx='3' fill='#3b82f6' />
-<text x='419.1' y='231' class='value'>14.8 tok/s</text>
-<text x='252' y='257' text-anchor='end' class='label'>Whisper Base</text>
-<rect x='260' y='242' width='148.5' height='20' rx='3' fill='#3b82f6' />
-<text x='414.5' y='257' class='value'>14.4 tok/s</text>
-<text x='252' y='283' text-anchor='end' class='label'>Whisper Small</text>
-<rect x='260' y='268' width='48.6' height='20' rx='3' fill='#3b82f6' />
-<text x='314.6' y='283' class='value'>4.7 tok/s</text>
-<text x='252' y='309' text-anchor='end' class='label'>Qwen3 ASR 0.6B (ONNX)</text>
-<rect x='260' y='294' width='37.7' height='20' rx='3' fill='#3b82f6' />
-<text x='303.7' y='309' class='value'>3.6 tok/s</text>
-<text x='252' y='335' text-anchor='end' class='label'>Whisper Turbo</text>
-<rect x='260' y='320' width='33.4' height='20' rx='3' fill='#3b82f6' />
-<text x='299.4' y='335' class='value'>3.2 tok/s</text>
-<text x='252' y='361' text-anchor='end' class='label'>Android Speech (Online)</text>
-<rect x='260' y='346' width='14.4' height='20' rx='3' fill='#3b82f6' />
-<text x='280.4' y='361' class='value'>1.4 tok/s</text>
-<text x='252' y='387' text-anchor='end' class='label'>Android Speech (Offline)</text>
-<rect x='260' y='372' width='14.3' height='20' rx='3' fill='#3b82f6' />
-<text x='280.3' y='387' class='value'>1.4 tok/s</text>
-<text x='252' y='413' text-anchor='end' class='label'>Whisper Tiny (whisper.cpp)</text>
-<rect x='260' y='398' width='5.7' height='20' rx='3' fill='#3b82f6' />
-<text x='271.7' y='413' class='value'>0.6 tok/s</text>
-<text x='252' y='439' text-anchor='end' class='label'>Qwen3 ASR 0.6B (CPU)</text>
-<rect x='260' y='424' width='2.0' height='20' rx='3' fill='#3b82f6' />
-<text x='268.0' y='439' class='value'>0.2 tok/s</text>
-<text x='252' y='465' text-anchor='end' class='label'>Omnilingual 300M</text>
-<rect x='260' y='450' width='2.0' height='20' rx='3' fill='#d1d5db' />
-<text x='268.0' y='465' class='value'>0.1 tok/s</text>
+
+<!-- Card -->
+<rect x="-80" width="1000" height="600" rx="12" fill="white"/>
+<rect x="-79" y="1" width="998" height="598" rx="11" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+<rect x="-79" y="1" width="998" height="5" rx="11" fill="url(#accent)" style="clip-path: inset(0 0 0 0 round 11px 11px 0 0)"/>
+
+<!-- Title -->
+<text x="270" y="34" font-size="18" font-weight="700" fill="#111827">Android Inference Speed (tok/s)</text>
+<text x="270" y="52" font-size="11" fill="#9ca3af">Samsung Galaxy · 30 s English audio · sorted by throughput</text>
+
+<!-- Grid (0, 10, 20, 30, 40) scale: 560/42.55 = 13.16 -->
+<line x1="270" y1="66" x2="270" y2="488" stroke="#e5e7eb" stroke-width="1"/>
+<line x1="402" y1="66" x2="402" y2="488" stroke="#f1f5f9" stroke-width="1"/>
+<line x1="533" y1="66" x2="533" y2="488" stroke="#f1f5f9" stroke-width="1"/>
+<line x1="665" y1="66" x2="665" y2="488" stroke="#f1f5f9" stroke-width="1"/>
+<line x1="796" y1="66" x2="796" y2="488" stroke="#f1f5f9" stroke-width="1"/>
+
+<!-- X-axis -->
+<line x1="270" y1="488" x2="840" y2="488" stroke="#e5e7eb" stroke-width="1"/>
+<text x="270" y="504" text-anchor="middle" font-size="9" fill="#9ca3af">0</text>
+<text x="402" y="504" text-anchor="middle" font-size="9" fill="#9ca3af">10</text>
+<text x="533" y="504" text-anchor="middle" font-size="9" fill="#9ca3af">20</text>
+<text x="665" y="504" text-anchor="middle" font-size="9" fill="#9ca3af">30</text>
+<text x="796" y="504" text-anchor="middle" font-size="9" fill="#9ca3af">40</text>
+<text x="850" y="504" font-size="9" fill="#b0b8c4">tok/s &#x2192;</text>
+
+<!-- Row 0: Moonshine Tiny — 42.5 tok/s -->
+<text x="260" y="87" text-anchor="end" font-size="11" fill="#374151">Moonshine Tiny</text>
+<rect x="270" y="72" width="560" height="22" rx="5" fill="url(#g-sherpa)"/>
+<text x="836" y="87" font-size="10" font-weight="600" fill="#1f2937">42.5 tok/s</text>
+
+<!-- Row 1: SenseVoice Small — 33.6 tok/s -->
+<rect x="-80" y="98" width="1000" height="30" fill="#f8fafc"/>
+<text x="260" y="117" text-anchor="end" font-size="11" fill="#374151">SenseVoice Small</text>
+<rect x="270" y="102" width="442" height="22" rx="5" fill="url(#g-sherpa)"/>
+<text x="718" y="117" font-size="10" font-weight="600" fill="#1f2937">33.6 tok/s</text>
+
+<!-- Row 2: Whisper Tiny — 27.1 tok/s -->
+<text x="260" y="147" text-anchor="end" font-size="11" fill="#374151">Whisper Tiny</text>
+<rect x="270" y="132" width="357" height="22" rx="5" fill="url(#g-sherpa)"/>
+<text x="633" y="147" font-size="10" font-weight="600" fill="#1f2937">27.1 tok/s</text>
+
+<!-- Row 3: Moonshine Base — 25.8 tok/s -->
+<rect x="-80" y="158" width="1000" height="30" fill="#f8fafc"/>
+<text x="260" y="177" text-anchor="end" font-size="11" fill="#374151">Moonshine Base</text>
+<rect x="270" y="162" width="339" height="22" rx="5" fill="url(#g-sherpa)"/>
+<text x="615" y="177" font-size="10" font-weight="600" fill="#1f2937">25.8 tok/s</text>
+
+<!-- Row 4: Zipformer 20M — 16.3 tok/s — streaming -->
+<text x="260" y="207" text-anchor="end" font-size="11" fill="#374151">Zipformer 20M</text>
+<rect x="270" y="192" width="214" height="22" rx="5" fill="url(#g-stream)"/>
+<text x="490" y="207" font-size="10" font-weight="600" fill="#1f2937">16.3 tok/s</text>
+
+<!-- Row 5: Whisper Base EN — 14.8 tok/s -->
+<rect x="-80" y="218" width="1000" height="30" fill="#f8fafc"/>
+<text x="260" y="237" text-anchor="end" font-size="11" fill="#374151">Whisper Base EN</text>
+<rect x="270" y="222" width="195" height="22" rx="5" fill="url(#g-sherpa)"/>
+<text x="471" y="237" font-size="10" font-weight="600" fill="#1f2937">14.8 tok/s</text>
+
+<!-- Row 6: Whisper Base — 14.4 tok/s -->
+<text x="260" y="267" text-anchor="end" font-size="11" fill="#374151">Whisper Base</text>
+<rect x="270" y="252" width="189" height="22" rx="5" fill="url(#g-sherpa)"/>
+<text x="465" y="267" font-size="10" font-weight="600" fill="#1f2937">14.4 tok/s</text>
+
+<!-- Row 7: Whisper Small — 4.7 tok/s -->
+<rect x="-80" y="278" width="1000" height="30" fill="#f8fafc"/>
+<text x="260" y="297" text-anchor="end" font-size="11" fill="#374151">Whisper Small</text>
+<rect x="270" y="282" width="62" height="22" rx="5" fill="url(#g-sherpa)"/>
+<text x="338" y="297" font-size="10" font-weight="600" fill="#1f2937">4.7 tok/s</text>
+
+<!-- Row 8: Qwen3 ASR 0.6B (ONNX) — 3.7 tok/s -->
+<text x="260" y="327" text-anchor="end" font-size="11" fill="#374151">Qwen3 ASR 0.6B (ONNX)</text>
+<rect x="270" y="312" width="48" height="22" rx="5" fill="url(#g-qwen-onnx)"/>
+<text x="324" y="327" font-size="10" font-weight="600" fill="#1f2937">3.7 tok/s</text>
+
+<!-- Row 9: Whisper Large V3 Turbo — 3.2 tok/s -->
+<rect x="-80" y="338" width="1000" height="30" fill="#f8fafc"/>
+<text x="260" y="357" text-anchor="end" font-size="11" fill="#374151">Whisper Large V3 Turbo</text>
+<rect x="270" y="342" width="43" height="22" rx="5" fill="url(#g-sherpa)"/>
+<text x="319" y="357" font-size="10" font-weight="600" fill="#1f2937">3.2 tok/s</text>
+
+<!-- Row 10: Android Speech Online — 1.4 tok/s -->
+<text x="260" y="387" text-anchor="end" font-size="11" fill="#374151">Android Speech Online</text>
+<rect x="270" y="372" width="18" height="22" rx="5" fill="url(#g-system)"/>
+<text x="294" y="387" font-size="10" font-weight="600" fill="#1f2937">1.4 tok/s</text>
+
+<!-- Row 11: Android Speech Offline — 1.4 tok/s -->
+<rect x="-80" y="398" width="1000" height="30" fill="#f8fafc"/>
+<text x="260" y="417" text-anchor="end" font-size="11" fill="#374151">Android Speech Offline</text>
+<rect x="270" y="402" width="18" height="22" rx="5" fill="url(#g-system)"/>
+<text x="294" y="417" font-size="10" font-weight="600" fill="#1f2937">1.4 tok/s</text>
+
+<!-- Row 12: Cactus Whisper Tiny — 0.5 tok/s — whisper.cpp -->
+<text x="260" y="447" text-anchor="end" font-size="11" fill="#374151">Cactus Whisper Tiny</text>
+<rect x="270" y="432" width="7" height="22" rx="3" fill="url(#g-cactus)"/>
+<text x="283" y="447" font-size="10" font-weight="600" fill="#1f2937">0.5 tok/s</text>
+
+<!-- Row 13: Qwen3 ASR 0.6B (CPU) — 0.2 tok/s -->
+<rect x="-80" y="458" width="1000" height="30" fill="#f8fafc"/>
+<text x="260" y="477" text-anchor="end" font-size="11" fill="#374151">Qwen3 ASR 0.6B (CPU)</text>
+<rect x="270" y="462" width="3" height="22" rx="2" fill="url(#g-qwen-cpu)"/>
+<text x="279" y="477" font-size="10" font-weight="600" fill="#1f2937">0.2 tok/s</text>
+
+<!-- Legend -->
+<circle cx="270" cy="536" r="5" fill="#059669"/>
+<text x="280" y="540" font-size="10" fill="#6b7280">sherpa-onnx Offline</text>
+<circle cx="400" cy="536" r="5" fill="#0891b2"/>
+<text x="410" y="540" font-size="10" fill="#6b7280">Streaming</text>
+<circle cx="490" cy="536" r="5" fill="#4f46e5"/>
+<text x="500" y="540" font-size="10" fill="#6b7280">Android Speech</text>
+<circle cx="610" cy="536" r="5" fill="#d97706"/>
+<text x="620" y="540" font-size="10" fill="#6b7280">whisper.cpp</text>
+
+<circle cx="270" cy="556" r="5" fill="#ea580c"/>
+<text x="280" y="560" font-size="10" fill="#6b7280">QwenASR ONNX</text>
+<circle cx="400" cy="556" r="5" fill="#db2777"/>
+<text x="410" y="560" font-size="10" fill="#6b7280">QwenASR CPU</text>
+
+<!-- Benchmark info -->
+<text x="270" y="586" font-size="9" fill="#c4cad2">14 of 16 models benchmarked · Feb 2026</text>
 </svg>
