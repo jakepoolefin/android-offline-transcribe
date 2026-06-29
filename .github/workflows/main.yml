@@ -13,7 +13,7 @@ jobs:
     steps:
       # Step 1: Download the repository files to the runner environment
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
 
       # Step 2: Ensure the runner has permission to execute the script
       - name: Enter Folder
