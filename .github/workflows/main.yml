@@ -1,3 +1,2 @@
-cd VoicePingIOSAndroidOfflineSpeechTranslationAndroid
 ./setup-deps.sh
 ./gradlew assembleDebug
