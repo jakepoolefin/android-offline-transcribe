@@ -1,2 +1,38 @@
-./setup-deps.sh
-./gradlew assembleDebug
+name: Build Project
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  run-build-script:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Download the repository files to the runner environment
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Step 2: Ensure the runner has permission to execute the script
+      - name: Enter Folder
+        run: cd VoicePingIOSAndroidOfflineSpeechTranslationAndroid
+
+      # Step 3: Ensure the runner has permission to execute the script
+      - name: Make Script Executable
+        run: chmod +x ./setup-deps.sh        
+
+      # Step 4: Run the build script
+      - name: Execute Build Script
+        run: ./setup-deps.sh
+        shell: bash
+
+      # Step 5: Ensure the runner has permission to execute the script
+      - name: Make Script Executable
+        run: chmod +x ./gradlew assembleDebug
+
+      # Step 6: Run the build script
+      - name: Execute Build Script
+        run: ./gradlew assembleDebug
+        shell: bash
